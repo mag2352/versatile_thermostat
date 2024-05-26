@@ -208,17 +208,6 @@ class ThermostatOverClimate(BaseThermostat[UnderlyingClimate]):
                 self.auto_regulation_use_device_temp
                 # and we have access to the device temp
                 and (device_temp := self._hass.states.get(under._entity_id).attributes.get("current_temperature")) is not None
-                # and target is not reach (ie we need regulation)
-                and (
-                    (
-                        self.hvac_mode == HVACMode.COOL
-                        and self.target_temperature < self.current_temperature
-                    )
-                    or (
-                        self.hvac_mode == HVACMode.HEAT
-                        and self.target_temperature > self.current_temperature
-                    )
-                )
             ):
                 offset_temp = device_temp - self.current_temperature
 
