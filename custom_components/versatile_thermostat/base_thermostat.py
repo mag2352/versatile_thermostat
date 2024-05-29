@@ -1232,6 +1232,40 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
 
         # Delegate to all underlying
         sub_need_control_heating = False
+        if not self._window_state:
+            for under in self._underlyings:
+                sub_need_control_heating = (
+                    await under.set_hvac_mode(hvac_mode) or need_control_heating
+                )
+
+        # If AC is on maybe we have to change the temperature in force mode, but not in frost mode (there is no Frost protection possible in AC mode)
+        if self._hvac_mode == HVACMode.COOL and self.preset_mode != PRESET_NONE:
+            if self.preset_mode != PRESET_FROST_PROTECTION:
+                await self._async_set_preset_mode_internal(self.preset_mode, True)
+            else:
+                await self._async_set_preset_mode_internal(PRESET_ECO, True, False)
+
+        if need_control_heating and sub_need_control_heating:
+            await self.async_control_heating(force=True)
+
+        # Ensure we update the current operation after changing the mode
+        self.reset_last_temperature_time()
+
+        self.reset_last_change_time()
+
+        self.update_custom_attributes()
+        self.async_write_ha_state()
+        self.send_event(EventType.HVAC_MODE_EVENT, {"hvac_mode": self._hvac_mode})
+
+    async def async_set_temp_hvac_mode(self, hvac_mode: HVACMode, need_control_heating=True):
+        """Set new target hvac mode."""
+        _LOGGER.info("%s - Set hvac mode: %s", self, hvac_mode)
+
+        if hvac_mode is None:
+            return
+
+        # Delegate to all underlying
+        sub_need_control_heating = False
         for under in self._underlyings:
             sub_need_control_heating = (
                 await under.set_hvac_mode(hvac_mode) or need_control_heating
@@ -2063,6 +2097,15 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
             self._hvac_mode,
         )
 
+    async def restore_temp_hvac_mode(self, need_control_heating=False):
+        """Restore a previous hvac_mod"""
+        await self.async_set_temp_hvac_mode(self._hvac_mode, need_control_heating)
+        _LOGGER.debug(
+            "%s - Restored hvac_mode - hvac_mode is %s",
+            self,
+            self._hvac_mode,
+        )
+
     async def check_overpowering(self) -> bool:
         """Check the overpowering condition
         Turn the preset_mode of the heater to 'power' if power conditions are exceeded
@@ -2408,7 +2451,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
             # default to TURN_OFF
             elif self._window_action in [CONF_WINDOW_TURN_OFF, CONF_WINDOW_FAN_ONLY]:
                 if self.last_central_mode != CENTRAL_MODE_STOPPED:
-                    await self.restore_hvac_mode(True)
+                    await self.restore_temp_hvac_mode(True)
             else:
                 _LOGGER.error(
                     "%s - undefined window_action %s. Please open a bug in the github of this project with this log",
@@ -2420,9 +2463,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
                 "%s - Window is open. Set hvac_mode to '%s'", self, HVACMode.OFF
             )
             if self.last_central_mode in [CENTRAL_MODE_AUTO, None]:
-                if self._window_action in [CONF_WINDOW_TURN_OFF, CONF_WINDOW_FAN_ONLY]:
-                    self.save_hvac_mode()
-                elif self._window_action in [
+                if self._window_action in [
                     CONF_WINDOW_FROST_TEMP,
                     CONF_WINDOW_ECO_TEMP,
                 ]:
@@ -2432,7 +2473,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
                 self._window_action == CONF_WINDOW_FAN_ONLY
                 and HVACMode.FAN_ONLY in self.hvac_modes
             ):
-                await self.async_set_hvac_mode(HVACMode.FAN_ONLY)
+                await self.async_set_temp_hvac_mode(HVACMode.FAN_ONLY)
             elif (
                 self._window_action == CONF_WINDOW_FROST_TEMP
                 and self._presets.get(PRESET_FROST_PROTECTION) is not None
@@ -2448,7 +2489,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
                     self.find_preset_temp(PRESET_ECO)
                 )
             else:  # default is to turn_off
-                await self.async_set_hvac_mode(HVACMode.OFF)
+                await self.async_set_temp_hvac_mode(HVACMode.OFF)
 
     async def async_control_heating(self, force=False, _=None) -> bool:
         """The main function used to run the calculation at each cycle"""
@@ -2709,13 +2750,13 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
                 HVACMode.OFF,
             )
             self.save_hvac_mode()
-            await self.async_set_hvac_mode(HVACMode.OFF)
+            await self.async_set_temp_hvac_mode(HVACMode.OFF)
         if self._window_bypass_state and self._window_state:
             _LOGGER.info(
                 "%s - Last window state was open & ByPass is now on. Set hvac_mode to last available mode",
                 self,
             )
-            await self.restore_hvac_mode(True)
+            await self.restore_temp_hvac_mode(True)
         self.update_custom_attributes()
 
     def send_event(self, event_type: EventType, data: dict):

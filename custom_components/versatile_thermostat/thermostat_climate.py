@@ -760,7 +760,7 @@ class ThermostatOverClimate(BaseThermostat[UnderlyingClimate]):
                 for under in self._underlyings:
                     await under.set_hvac_mode(new_hvac_mode)
             changes = True
-            self._hvac_mode = new_hvac_mode
+            #self._hvac_mode = new_hvac_mode
 
         # A quick win to known if it has change by using the self._attr_fan_mode and not only underlying[0].fan_mode
         if new_fan_mode != self._attr_fan_mode:
