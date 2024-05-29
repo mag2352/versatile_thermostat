@@ -2796,10 +2796,14 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
             await self._async_set_preset_mode_internal(self._attr_preset_mode, True)
 
     async def async_turn_off(self) -> None:
+        self.save_hvac_mode()
         await self.async_set_hvac_mode(HVACMode.OFF)
 
     async def async_turn_on(self) -> None:
-        if self._ac_mode:
-            await self.async_set_hvac_mode(HVACMode.COOL)
+        if self._saved_hvac_mode != None:
+            await self.restore_hvac_mode(True)
         else:
-            await self.async_set_hvac_mode(HVACMode.HEAT)
+            if self._ac_mode:
+                await self.async_set_hvac_mode(HVACMode.COOL)
+            else:
+                await self.async_set_hvac_mode(HVACMode.HEAT)
