@@ -2444,7 +2444,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
             _LOGGER.info(
                 "%s - Window is closed. Restoring hvac_mode '%s' if central_mode is not STOPPED",
                 self,
-                self._saved_hvac_mode,
+                self._hvac_mode,
             )
             if self._window_action in [CONF_WINDOW_FROST_TEMP, CONF_WINDOW_ECO_TEMP]:
                 await self._async_internal_set_temperature(self._saved_target_temp)

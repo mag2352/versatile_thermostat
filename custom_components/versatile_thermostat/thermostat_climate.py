@@ -142,8 +142,8 @@ class ThermostatOverClimate(BaseThermostat[UnderlyingClimate]):
     async def _send_regulated_temperature(self, force=False):
         """Sends the regulated temperature to all underlying"""
 
-        if self.hvac_mode == HVACMode.OFF:
-            _LOGGER.debug("%s - don't send regulated temperature cause VTherm is off ")
+        if self.hvac_mode == HVACMode.OFF or self._window_state:
+            _LOGGER.debug("%s - don't send regulated temperature cause VTherm is off ", self)
             return
 
         _LOGGER.info(
