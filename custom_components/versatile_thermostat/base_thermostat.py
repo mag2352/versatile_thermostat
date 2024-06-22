@@ -1232,7 +1232,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
 
         # Delegate to all underlying
         sub_need_control_heating = False
-        if not self._window_state:
+        if ((not self._window_state) or (hvac_mode == HVACMode.OFF)):
             for under in self._underlyings:
                 sub_need_control_heating = (
                     await under.set_hvac_mode(hvac_mode) or need_control_heating
