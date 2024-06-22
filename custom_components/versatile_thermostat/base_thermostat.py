@@ -1239,7 +1239,7 @@ class BaseThermostat(ClimateEntity, RestoreEntity, Generic[T]):
                 )
 
         # If the window is on FAN_ONLY, turn it back on.
-        if (self._window_state and self._window_action == CONF_WINDOW_FAN_ONLY and hvac_mode == HVACMode.ON):
+        if (self._window_state and self._window_action == CONF_WINDOW_FAN_ONLY and hvac_mode != HVACMode.OFF):
             await self.async_set_temp_hvac_mode(HVACMode.FAN_ONLY)
 
         # If AC is on maybe we have to change the temperature in force mode, but not in frost mode (there is no Frost protection possible in AC mode)
