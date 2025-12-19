@@ -917,10 +917,8 @@ class UnderlyingClimate(UnderlyingEntity):
 
         if not hasattr(self._underlying_climate, "current_temperature"):
             return None
-        else:
-            return self._underlying_climate.current_temperature
 
-        # return self._hass.states.get(self._entity_id).attributes.get("current_temperature")
+        return self._hass.states.get(self._entity_id).attributes.get("current_temperature")
 
     @property
     def is_aux_heat(self) -> bool:
