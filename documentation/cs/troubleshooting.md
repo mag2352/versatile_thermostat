@@ -1,10 +1,14 @@
 # Řešení problémů
 
+S diagnostikou či vysvětlením situace nebo vyhledáváním v dokumentaci vám pomůže [VTherm Assistant](https://www.versatile-thermostat.org/en/plugins/#jmcollin78/vtherm_assistant).
+
 - [Řešení problémů](#řešení-problémů)
   - [Použití Heatzy](#použití-heatzy)
   - [Použití radiátoru s pilotním drátem (Nodon SIN-4-FP-21)](#použití-radiátoru-s-pilotním-drátem-nodon-sin-4-fp-21)
   - [Použití systému Netatmo](#použití-systému-netatmo)
+  - [Centrální kotel nefunguje](#centrální-kotel-nefunguje)
   - [Topí jen první radiátor](#topí-jen-první-radiátor)
+  - [Procento VTherm a stupeň otevření ventilu se liší](#procento-vtherm-a-stupeň-otevření-ventilu-se-liší)
   - [Radiátor topí, i když je překročena cílová teplota, nebo netopí, když je teplota místnosti výrazně pod cílem](#radiátor-topí-i-když-je-překročena-cílová-teplota-nebo-netopí-když-je-teplota-místnosti-výrazně-pod-cílem)
     - [Typ `over_switch` nebo `over_valve`](#typ-over_switch-nebo-over_valve)
     - [Typ `over_climate`](#typ-over_climate)
@@ -109,10 +113,25 @@ TODO
 ```
 
 
+## Centrální kotel nefunguje
+
+Pokud se centrální kotel nespustí, přestože _VTherm_ požaduje vytápění, zkontrolujte následující tři body:
+1. Funkce centrálního kotle je povolena v centralizované konfiguraci (je zaškrtnuto « Přidat centrální kotel »).
+2. V hlavní konfiguraci každého _VTherm_, který má kotel ovládat, je povolena volba pro použití _VTherm_ ke spuštění centrálního kotle.
+3. Nakonec zkontrolujte, zda je mezi entitami centralizované konfigurace nastaven vhodný aktivační práh větší než nula, a to podle počtu zařízení (`number.boiler_activation_threshold`) nebo podle výkonu (`number.boiler_power_activation_threshold`). Započítávají se pouze zařízení patřící k _VThermům_ označeným jako spouštěče centrálního kotle. Kotel se aktivuje, jakmile je překročen jeden z nenulových prahů. Viz [ovládání centrálního kotle](feature-central-boiler.md) a [základní atributy](base-attributes.md).
+
 ## Topí jen první radiátor
 
 V režimu `over_switch`, pokud je pro stejný VTherm nakonfigurováno více radiátorů, vytápění bude spuštěno postupně, aby se co nejvíce vyhladily špičky spotřeby.
 To je zcela normální a záměrné. Je to popsáno zde: [Pro termostat typu ```thermostat_over_switch```](#pro-termostat-typu-thermostat_over_switch)
+
+## Procento VTherm a stupeň otevření ventilu se liší
+
+U VTherm typu `over_climate` s přímým řízením ventilu představuje atribut `valve_open_percent` nezpracovaný požadavek vypočítaný integrací VTherm. Stupeň otevření odeslaný ventilu se může lišit: nastavení ventilu (`opening_threshold`, `max_closing_degree`, `minimum_opening_degrees` a `max_opening_degrees`) tento požadavek upravují podle zvolené kalibrace.
+
+Existuje také souvislost mezi regulačním prahem a prahem otevření: `regulation_threshold` se použije jako minimální práh otevření, pokud je vyšší než nakonfigurovaný `opening_threshold`. I při výchozích hodnotách ostatních nastavení ventilu (0 až 100) proto může nenulový regulační práh požadavek změnit. Například při prahu 5 % může požadavek VTherm 12 % vést k odeslání stupně otevření 7 %. Při hodnotě 0 % jsou v této konfiguraci obě hodnoty shodné.
+
+Tento rozdíl je očekávaný a sám o sobě neznamená, že je ventil zaseknutý nebo špatně kalibrovaný. Než spustíte upozornění založené pouze na porovnání těchto dvou hodnot, zkontrolujte nakonfigurované prahy a limity. Nastavení `regulation_threshold` na 0 může při neutrálních ostatních nastaveních obnovit shodu, ale omezí filtrování malých změn a může zvýšit počet odeslaných příkazů. Podrobnosti o nastavení najdete v části [samoregulace s přímým řízením ventilu](self-regulation.md#samo-regulace-přímým-ovládáním-ventilu).
 
 ## Radiátor topí, i když je překročena cílová teplota, nebo netopí, když je teplota místnosti výrazně pod cílem
 
@@ -170,7 +189,7 @@ Můžete také zkontrolovat atributy VTherm pro data posledních přijatých hod
 Příklad:
 
 ```yaml
-safety_state: true
+security_state: true
 last_temperature_datetime: "2023-12-06T18:43:28.346010+01:00"
 last_ext_temperature_datetime: "2023-12-06T13:04:35.164367+01:00"
 last_update_datetime: "2023-12-06T18:43:28.351103+01:00"
@@ -179,7 +198,7 @@ safety_delay_min: 60
 ```
 
 Můžeme vidět, že:
-1. VTherm je skutečně v bezpečnostním režimu (`safety_state: true`),
+1. VTherm je skutečně v bezpečnostním režimu (`security_state: true`),
 2. Aktuální čas je 06/12/2023 v 18:43:28 (`last_update_datetime: "2023-12-06T18:43:28.351103+01:00"`),
 3. Čas posledního příjmu teploty místnosti je 06/12/2023 v 18:43:28 (`last_temperature_datetime: "2023-12-06T18:43:28.346010+01:00"`), takže je aktuální,
 4. Čas posledního příjmu vnější teploty je 06/12/2023 v 13:04:35 (`last_ext_temperature_datetime: "2023-12-06T13:04:35.164367+01:00"`). Vnější teplota má zpoždění více než 5 hodin, což spustilo bezpečnostní režim, protože práh je nastaven na 60 minut (`safety_delay_min: 60`).
@@ -196,8 +215,6 @@ Závisí to na příčině problému:
 3. Některé teplotní senzory neposílají měření, pokud se teplota nezměnila. Takže pokud teplota zůstává velmi stabilní po dlouhou dobu, bezpečnostní režim se může spustit. To není velký problém, protože se deaktivuje, jakmile VTherm obdrží novou teplotu. Na některých teploměrech (např. TuYa nebo Zigbee) můžete vynutit maximální zpoždění mezi dvěma měřeními. Maximální zpoždění by mělo být nastaveno na hodnotu nižší než `safety_delay_min`,
 4. Jakmile je teplota znovu přijata, bezpečnostní režim se vypne a předchozí preset, cílová teplota a hodnoty režimu budou obnoveny.
 5. Pokud je vnější teplotní senzor vadný, můžete zakázat spuštění bezpečnostního režimu, protože má minimální dopad na výsledky. Viz [zde](feature-advanced.md#safety-mode).
-6. some Zigbee sensors have an entity named Last Seen. They are often hidden and need to be enabled to be usable. Once enabled, you can configure it in the VTherm main configuration screen. See main configuration screen.
-
 
 ## Použití skupiny osob jako senzoru přítomnosti
 

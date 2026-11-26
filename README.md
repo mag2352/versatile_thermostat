@@ -13,9 +13,28 @@ languages : [English](README.md) | [Français](README-fr.md) | [Deutsch](README-
 <img src="https://github.com/jmcollin78/versatile_thermostat/blob/main/images/icon.png" />
 </p>
 
-> ![Tip](images/tips.png) This thermostat integration aims to greatly simplify your heating management automations. Since all typical heating events (nobody home?, activity detected in a room?, window open?, power load shedding?), are natively managed by the thermostat, you don’t need to deal with complicated scripts and automations to manage your thermostats. ;-).
+> ![Tip](images/tips.png) **Versatile Thermostat** is a highly configurable virtual thermostat that transforms any heating equipment (radiators, air conditioners, heat pumps, etc.) into an intelligent and adaptive system. It allows you to consolidate and centrally control multiple different heating systems, while automatically optimizing your energy consumption. Thanks to its advanced algorithms (TPI, auto-TPI) and learning capabilities, the thermostat adapts to your home 🏠 and your habits, providing you with optimal comfort and significant reduction in your heating bills 💰.
+> This thermostat integration aims to greatly simplify your heating management automations. Since all typical heating events (nobody home?, activity detected in a room?, window open?, power load shedding?) are natively managed by the thermostat, you don't need to deal with complicated scripts and automations to manage your thermostats. 😉
 
 This custom component for Home Assistant is an upgrade and a complete rewrite of the "Awesome thermostat" component (see [Github](https://github.com/dadge/awesome_thermostat)) with added features.
+
+# Native LLM/MCP integration
+
+VTherm integrates with Home Assistant's native LLM platform and exposes its tools through the official Home Assistant MCP Server. Assistants can list VTherms exposed to Assist, read their state and obtain structured diagnostics based on VTherm's own messages and reasons.
+
+MCP reads include central-configuration presence and each VTherm's inheritance; diagnostics distinguish central settings, effective values, central mode and boiler participation, subject to read permissions.
+
+For explicit control requests, three tools can change the target temperature, preset or HVAC mode through standard `climate.*` services, with user permission and value checks. Diagnostic requests remain read-only; the MCP Server's **Read only** option hides action tools.
+
+Classic TPI coefficients can also be analyzed from 7–14 usable days of Recorder history, with explicit application and additional confirmation for large changes. Analysis supports `over_switch`, `over_valve` and experimental `over_climate_valve` using recorded valve commands as a proxy, not measured heat. For all supported types, estimates are experimental and must be verified before application; they are not validated optimal settings.
+
+Native adaptive TPI can be analyzed exploratorily with explicit assumption warnings, coherence checks and large percentage-change alerts; writes still require classic TPI.
+
+See the [LLM/MCP documentation](documentation/en/feature-llm-mcp.md) for setup, safeguards and examples.
+
+For help diagnosing or explaining a situation, or searching the documentation, try the [VTherm Assistant](https://www.versatile-thermostat.org/en/plugins/#jmcollin78/vtherm_assistant).
+
+Read-only Recorder history for CSV exports and charts created by the LLM client.
 
 # Screenshots
 
@@ -26,52 +45,58 @@ Versatile Thermostat UI Card (Available on [Github](https://github.com/jmcollin7
 # What's New?
 ![New](images/new-icon.png)
 
-## Release 8.3
-1. Addition of a configurable delay before activating the central boiler.
-2. Addition of a trigger for the central boiler when the total activated power exceeds a threshold. To make this feature work you must:
-   - Configure the power threshold that will trigger the boiler. This is a new entity available in the `central configuration` device.
-   - Configure the power values of the VTherms. This can be found on the first configuration page of each VTherm.
-   - Check the `Used by central boiler` box.
+## Release 10.6.1
 
-Each time a VTherm is activated, its configured power is added to the total and, if the threshold is exceeded, the central boiler will be activated after the delay configured in item 1.
+Since version 10.5.1, this release introduces the following features:
 
-The previous counter for the number of activated devices and its threshold still exist. To disable one of the thresholds (the power threshold or the activated-devices count threshold), set it to zero. As soon as either of the two non-zero thresholds is exceeded, the boiler is activated. Therefore a logical "or" is applied between the two thresholds.
+- **Plugin inhibition**: compatible plugins can temporarily withdraw a _VTherm_ from control. Commands to underlying devices are suspended during this period; when control resumes, the thermostat reapplies its current state.
+- **Automatic return after a manual override**: configure a duration to restore the preset that was active before a manual temperature change. If a timed preset was already running, it resumes until its scheduled end.
+- **Templates for central boiler commands**: a command value can be calculated using a Home Assistant template, evaluated each time the boiler is activated, deactivated, or kept alive. Templates are validated during configuration.
 
-More informations [here](documentation/en/feature-central-boiler.md).
+## Release 10.5.0
 
-## Release 8.2
-> Added a feature to lock / unlock a VTherm with an optional code. More information [here](documentation/en/feature-lock.md)
+Heating failure detection can now be used as the external
+`vtherm_heating_failure_detection` plugin. The plugin provides central settings
+and per-VTherm overrides; its forms pre-fill the existing core settings to make
+migration easier.
 
-## Release 8.1
-> - For `over_climate` with regulation by direct valve control, two new parameters are added to the existing `minimum_opening_degrees`. The parameters are now the following:
->    - `opening_threshold`: the valve opening value under which the valve should be considered as closed (and then 'max_closing_degree' will apply),
->    - `max_closing_degree`: the closing degree maximum value. The valve will never be closed above this value. Set it to 100 to fully close the valve when no heating is needed,
->    - `minimum_opening_degrees`: the opening degree minimum value for each underlying device when ``opening_threshold` is exceeded, comma separated. Default to 0. Example: 20, 25, 30. When the heating starts, the valve will start opening with this value and will continuously increase as long as more heating is needed.
->
-> ![alt text](images/opening-degree-graph.png)
-> More informations can be found the discussion thread about this here: https://github.com/jmcollin78/versatile_thermostat/issues/1220
+During the transition period, plugin settings take precedence, while values not
+defined by the plugin continue to use the legacy core configuration. Disable the
+legacy feature for a VTherm before enabling the plugin to avoid duplicate
+configuration.
 
-## Release 8.0
-> This is a major release. It rewrites a significant part of the internal mechanisms of Versatile Thermostat by introducing several new features:
->    1. _requested state / current state_: VTherm now has 2 states. The requested state is the state requested by the user (or Scheduler). The current state is the state currently applied to the VTherm. The latter depends on the different VTherm functions. For example, the user can request (requested state) to have heating on with Comfort preset but since the window has been detected open, the VTherm is actually off. This dual management always preserves the user's request and applies the result of the different functions on this user request to get the current state. This better handles cases where multiple functions want to act on the VTherm state (window opening and power shedding for example). It also ensures a return to the user's initial request when no detection is in progress anymore,
->    2. _time filtering_: the time filtering operation has been revised. Time filtering prevents sending too many commands to a controlled equipment to avoid consuming too much battery (battery-powered TRV for example), changing setpoints too frequently (heat pump, pellet stove, underfloor heating, ...). The new operation is now as follows: explicit user (or Scheduler) requests are always immediately taken into account. They are not filtered. Only changes related to external conditions (room temperature for example) are potentially filtered. Filtering consists of resending the desired command later and not ignoring the command as was previously the case. The `auto_regulation_dtemp` parameter allows adjusting the delay,
->    3. _hvac_action improvement_: the `hvac_action` reflects the current activation state of the controlled equipment. For an `over_switch` type it reflects the switch activation state, for an `over_valve` or valve regulation, it is active when the valve opening is greater than the minimum valve opening (or 0 if not configured), for an `over_climate` it reflects the underlying `climate`'s `hvac_action` if available or a simulation otherwise.
->    4. _custom attributes_: the organization of custom attributes accessible in Developer Tools / States has been reorganized into sections depending on the VTherm type and each activated function. More information [here](documentation/en/reference.md#custom-attributes).
->    5. _power shedding_: the power shedding algorithm now takes into account equipment shutdown between two measurements of home power consumption. Suppose you have power consumption feedback every 5 minutes. If a radiator is turned off between 2 measurements then turning on a new one may be authorized. Before, only turn-ons were taken into account between 2 measurements. As before, the next power consumption feedback will possibly shed more or less.
->    6. _auto-start/stop_: auto-start/stop is only useful for `over_climate` type VTherm without direct valve control. The option has been removed for other VTherm types.
->    7. _VTherm UI Card_: all these modifications allowed a major evolution of the [VTherm UI Card](documentation/en/additions.md#versatile-thermostat-ui-card) to integrate messages explaining the current state (why does my VTherm have this target temperature?) and if time filtering is in progress - so the underlying state update has been delayed.
->    8. _log improvements_: logs have been improved to simplify debugging. Logs in the form `--------------------> NEW EVENT: VersatileThermostat-Inversed ...` inform of an event impacting the VTherm state.
->
-> ⚠️ **Warning**
->
-> This major release includes breaking changes from the previous version:
-> - `versatile_thermostat_security_event` has been renamed to `versatile_thermostat_safety_event`. If your automations use this event, you must update them,
-> - custom attributes have been reorganized. You must update your automations or Jinja templates that use them,
-> - the [VTherm UI Card](documentation/en/additions.md#versatile-thermostat-ui-card) must be updated to at least V2.0 to be compatible,
->
-> **Despite the 342 automated tests of this integration and the care taken with this major release, I cannot guarantee that its installation will not disrupt your VTherms' states. For each VTherm you must check the preset, hvac_mode and possibly the VTherm setpoint temperature after installation.**
->
->
+The heating-failure binary sensor is now provided by the plugin. When this can
+be done without a conflict, its existing `entity_id` is retained so dashboards
+and automations keep working. Reload the plugin entry after disabling the legacy
+sensor; if it remains active, Home Assistant may create a new `entity_id` that
+must be used by existing consumers.
+
+## Release 10.4.0
+VTherm can now expose `current_humidity` from an external humidity sensor for all thermostat types. The sensor can be selected in the Humidity menu or automatically detected on the room-temperature sensor device.
+
+`over_valve` thermostats now have the same valve control parameters as `over_climate` thermostats with direct valve control regulation: `opening_threshold_degree`, `min_opening_degrees`, `max_closing_degree`, and `max_opening_degrees`. More information: [valve control](documentation/en/over-valve.md).
+
+`over_valve` thermostats now also support Sleep mode. Sleep displays VTherm as off and sends a raw 100% opening request without requesting central boiler heating. Configured valve-control limits can cap the physical opening. More information: [Sleep mode](documentation/en/over-valve.md#sleep-mode). Using sleep mode requires a VTherm-compatible card, such as the [Versatile Thermostat UI Card](https://github.com/jmcollin78/versatile-thermostat-ui-card), or the `versatile_thermostat.set_hvac_mode_sleep` action; the default Home Assistant climate card is not supported.
+
+## Release 10.3.0
+Power units can now be configured. Configuration screens let you select a unit for power measurements (W by default). Calculated energy units match the configured power unit. Existing entries are migrated using the historical device power value: values above 100 are treated as W; other values as kW.
+
+⚠️ **Important change for statistics**
+You may see a repair notification such as: `The unit of “Central configuration Total power active for boiler” (sensor.total_power_active_for_boiler) was changed to “kW”`, or a similar log message. This is expected because the unit was previously not specified. Select the repair action `Update the unit of long-term statistics` to correct the statistics.
+
+## Release 10.2.0
+The **Auto Fan** feature is now available as an external plugin ([vtherm_auto_fan_extended](https://github.com/jmcollin78/vtherm_auto_fan_extended)). The original (_legacy_) auto-fan version is still available in _VTherm_, but it must be disabled in the thermostat configuration in order to use the plugin. The full documentation is available on the [plugin's GitHub repository](https://github.com/jmcollin78/vtherm_auto_fan_extended).
+
+## Release 10.1
+Auto-start/stop stop mode selection. A new `select` entity lets you choose the mode applied when the auto-start/stop feature detects a stop condition: `Off` (default), `Fan only` or `Dry`. The `Fan only` and `Dry` modes are only proposed when the underlying appliance supports them. More information [here](documentation/en/feature-auto-start-stop.md).
+
+Self-regulation is now disabled when an `over_climate` _VTherm_ is not in `Heat` or `Cool` mode: the original (non-regulated) setpoint is sent to the underlying device. More information [here](documentation/en/self-regulation.md).
+
+## Release 10.0
+Introduction of the plugin mechanism. This allows the use of external integrations as plugins for _VTherm_. The list of available plugins is available on the [Versatile Thermostat Web site](https://www.versatile-thermostat.org/en/plugins).
+
+
+
 # 🍻 Thanks for the beers 🍻
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/jmcollin78)
 
@@ -115,14 +140,17 @@ The documentation is now divided into several pages for easier reading and searc
 15. [Centralized control of all VTherms](documentation/en/feature-central-mode.md)
 16. [Central heating control](documentation/en/feature-central-boiler.md)
 17. [Advanced aspects, security mode](documentation/en/feature-advanced.md)
-18. [Self-regulation](documentation/en/self-regulation.md)
-19. [Auto TPI learning](documentation/en/feature-autotpi.md)
-20. [Algorithms](documentation/en/algorithms.md)
-21. [Lock / Unlock](documentation/en/feature-lock.md)
-22. [Reference documentation](documentation/en/reference.md)
-23. [Tuning examples](documentation/en/tuning-examples.md)
-24. [Troubleshooting](documentation/en/troubleshooting.md)
-25. [Release notes](documentation/en/releases.md)
+18. [Heating Failure Detection](documentation/en/feature-heating-failure-detection.md)
+19. [Self-regulation](documentation/en/self-regulation.md)
+20. [Auto TPI learning](documentation/en/feature-autotpi.md)
+21. [Algorithms](documentation/en/algorithms.md)
+22. [Lock / Unlock](documentation/en/feature-lock.md)
+23. [Temperature synchronisation](documentation/en/feature-sync_device_temp.md)
+24. [Timed preset](documentation/en/feature-timed-preset.md)
+25. [Reference documentation](documentation/en/reference.md)
+26. [Tuning examples](documentation/en/tuning-examples.md)
+27. [Troubleshooting](documentation/en/troubleshooting.md)
+28. [Release notes](documentation/en/releases.md)
 
 # Some results
 
@@ -151,6 +179,10 @@ The documentation is now divided into several pages for easier reading and searc
 | ------------------------------------------- | ------------------------------------------- | ------------------------------------------- |
 | ![testimonial 1](images/testimonials-1.png) | ![testimonial 2](images/testimonials-2.png) | ![testimonial 3](images/testimonials-3.png) |
 | ![testimonial 4](images/testimonials-4.png) | ![testimonial 5](images/testimonials-5.png) | ![testimonial 6](images/testimonials-6.png) |
+
+# ⭐ Star history
+
+[![Star History Chart](https://star-history.dera.page/svg?repos=jmcollin78/versatile_thermostat&type=Date)](https://star-history.dera.page/#jmcollin78/versatile_thermostat&Date)
 
 Enjoy!
 

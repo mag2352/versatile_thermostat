@@ -12,16 +12,22 @@ Es besteht die Möglichkeit, einen Zentralheizungskessel zu steuern. Sobald es m
 
 ## Prinzip
 Grundlegend funktioniert das so:
-1. Eine neue Entität des Typs `binary_sensor` mit dem Standardnamen `binary_sensor.central_boiler` wird hinzugefügt.
+1. Eine neue Entität des Typs `binary_sensor` mit dem Standardnamen `binary_sensor.central_configuration_central_boiler` wird hinzugefügt.
 2. In der Konfiguration des _VTherms_ wird festgelegt, ob das _VTherm_ den Heizkessel steuern soll. In einer heterogenen Installation müssen einige _VTherms_ den Kessel steuern, andere hingegen nicht. Daher muss in jeder _VTherm_-Konfiguration angeben werden, ob es den Heizkessel steuert oder nicht. Jedem _VTherm_, der den Heizkessel steuert, kannen eine Leistung zuordnen werden.
-3. Der `binary_sensor.central_boiler` überwacht Statusänderungen der _VTherm_-Geräte, die als Kesselsteuerung gekennzeichnet sind.
-4. Sobald die Anzahl der vom _VTherm_ gesteuerten Geräte, die eine Heizung anfordern (d. h. deren `hvac_action` auf `Heizen` wechselt), oder die Gesamtleistung einen konfigurierbaren Schwellwert überschreitet, wechselt der `binary_sensor.central_boiler` auf ein (`on`), und **wenn ein Aktivierungsdienst konfiguriert wurde, wird dieser Dienst aufgerufen**.
-5. Wenn die Anzahl der zu beheizenden Geräte wieder unter den Schwellwert fällt, wechselt der `binary_sensor.central_boiler` zu aus (`off`), und **wenn ein Deaktivierungsdienst konfiguriert wurde, wird dieser Dienst aufgerufen**.
+3. Der `binary_sensor.central_configuration_central_boiler` überwacht Statusänderungen der _VTherm_-Geräte, die als Kesselsteuerung gekennzeichnet sind.
+4. Sobald die Anzahl der vom _VTherm_ gesteuerten Geräte, die eine Heizung anfordern (d. h. deren `hvac_action` auf `Heizen` wechselt), oder die Gesamtleistung einen konfigurierbaren Schwellwert überschreitet, wechselt der `binary_sensor.central_configuration_central_boiler` auf ein (`on`), und **wenn ein Aktivierungsdienst konfiguriert wurde, wird dieser Dienst aufgerufen**.
+5. Wenn keiner der beiden von null verschiedenen Schwellwerte mehr erreicht wird, wechselt der `binary_sensor.central_configuration_central_boiler` zu aus (`off`), und **wenn ein Deaktivierungsdienst konfiguriert wurde, wird dieser Dienst aufgerufen**.
 6. Sie haben Zugriff auf vier Entitäten:
    - Eine vom Typ `number` mit dem Namen `number.boiler_activation_threshold` gibt den Auslöseschwellwert an. Dieser Schwellwert bezieht sich auf die Anzahl der Geräte (Heizkörper), die Heizleistung benötigen, und nicht auf die Anzahl der _VTherm_, die Heizleistung anfordern.
    - Eine vom Typ `sensor` mit dem Namen `sensor.nb_device_active_for_boiler`, die die Anzahl der Geräte angibt, die Heizleistung benötigen. Beispielsweise setzt ein _VTherm_ mit 4 Ventilen, von denen 3 Heizleistung anfordern, diesen Sensor 3. Es werden nur die Geräte von _VTherms_ gezählt, die zfür die Steuerung des Zentralheizkessels gekennzeichnet sind.
    - Ein Sensor vom Typ `number` mit dem Namen `number.boiler_power_activation_threshold`, der den Schwellenwert für die Auslösung der Leistung angibt. Wenn die Gesamtleistung, durch die von den Heizkessel steuernden _Vtherms_ überschritten wird, wird der Heizkessel gestartet.
   - Eine vom Typ `sensor` mit dem Namen `sensor.total_power_active_for_boiler`, die die zuletzt berechnete Gesamtleistung angibt.
+
+Der Heizkessel wird aktiviert, sobald einer der beiden Schwellwerte erreicht oder überschritten wird: entweder der Schwellwert für die Anzahl aktiver untergeordneter Geräte **oder** der Schwellwert für die angeforderte Leistung. Es gilt eine logische ODER-Verknüpfung. Ein Schwellwert von null deaktiviert das entsprechende Kriterium.
+
+> **Hinweis zum Schwellwert für die Anzahl aktiver untergeordneter Geräte:** Bei einem _VTherm_, der Ventile steuert, berücksichtigt die Zählung, ob jedes Ventil aktiv ist. Die Ventileinstellungen, insbesondere der Öffnungsschwellwert, bestimmen daher, ob ein Ventil mitgezählt wird.
+
+> **Achtung beim Leistungsschwellwert:** Er wird anhand der vom Algorithmus angeforderten Leistung berechnet, unabhängig vom Öffnungszustand der Ventile. Die angeforderte Leistung kann ungleich null sein, obwohl die konfigurierten Öffnungsschwellwerte verhindern, dass die Ventile als aktiv gelten. Dieser Schwellwert wird daher für _VTherm_ zur Ventilsteuerung nicht empfohlen.
 
 Der Zugriff auf Informationen zur Steuerung und Regulierung des Heizkessels ist jederzeit gegeben.
 
@@ -51,6 +57,8 @@ Auf der nächsten Seite können Sie die Aktionen (z. B. Dienste) konfigurieren, 
 
 Der erste Parameter gibt eine Verzögerung in Sekunden vor der Heizkesselaktivierung an. Der Standardwert ist 0, sodass der Heizkessel sofort startet, sobald ein Schwellenwert überschritten wird. Wenn Beispielsweise die Ventile Zeit zum Öffnen benötigen, sollte ein positiver Wert in Sekunden angegeben werden. Bei einigen Ventilen für Fußbodenheizungen kann das Öffnen mehrere Minuten dauern, und es kann schädlich sein, die Kesselpumpe zu aktivieren, bevor die Ventile geöffnet sind.
 
+Der zweite Parameter entspricht der **Keep-Alive-Verzögerung** in Sekunden. Mit diesem Parameter können Sie den Kesselaktivierungsbefehl regelmäßig erneut senden, um sicherzustellen, dass der Kessel eingeschaltet bleibt. Wenn ein Kesselbefehl beispielsweise nicht ordnungsgemäß empfangen wird oder sich der Kessel von selbst ausschaltet, wird derselbe Befehl in regelmäßigen Abständen erneut gesendet. Der Standardwert ist 0, d. h. Keep-Alive ist deaktiviert. Wenn Sie diese Funktion aktivieren möchten, stellen Sie einen positiven Wert in Sekunden ein (zum Beispiel 60, um den Befehl jede Minute erneut zu senden). Dieser Parameter ist optional und kann auf 0 gesetzt werden, wenn Sie ihn nicht benötigen.
+
 Die Aktionen (ehemals Dienste) werden folgendermaßen konfiguriert:
 1. Das allgemeine Format ist `entity_id/service_id[/attribute:value]` (wobei `/attribute:value` optional ist).
 2. `entity_id` ist der Name der Entity, die den Kessel steuert, in der Form `domain.entity_name`. Zum Beispiel: `switch.heizungsanlage` für einen Kessel, der von einem Schalter gesteuert wird, oder `climate.heizungsanlage` für einen Kessel, der von einem Thermostat gesteuert wird, oder jede andere Entity, die eine Kesselsteuerung erlaubt (es gibt keine Einschränkung). Sie können auch Eingänge (`Helfer`) wie `input_boolean` oder `input_number` umschalten.
@@ -64,8 +72,15 @@ Beispiele (zur Anpassung an Ihre Gegebenheiten):
 - `switch.pumpe_heizungsanlage/switch.turn_off`: zum Ausschalten des Schalters, der die Kesselpumpe steuert.
 - ...
 
-> **Hinweis**
-> Es gibt keine Verzögerung für das Abschalten des Heizkessels. Dies ist bewusst so gewählt, damit Sie den Heizkessel nicht laufen lassen, wenn alle Ventile geschlossen sind. Richtig wäre eine negative Verzögerung (d. h. Ausschalten des Heizkessels vor dem Schließen der Ventile), aber das ist in der aktuellen Situation nicht möglich, da die Betätigung der Ventile den Heizkessel auslöst und nicht umgekehrt.
+### Ein Template für den Wert verwenden
+Der Wert (der Teil nach `Attribut:`) kann ein Home-Assistant-Template sein. Das Template wird bei jedem Senden des Befehls ausgewertet: beim Einschalten, beim Ausschalten und bei jedem Keep-Alive. Der Wert darf `/` und `:` enthalten.
+
+Beispiel für einen Kessel, der von einem Raumregler gesteuert wird, dessen Sollwert relativ zu seiner eigenen gemessenen Temperatur ist:
+- Aktivierung: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) + 1 }}`
+- Deaktivierung: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) - 2 }}`
+
+> **Tipp**
+> Verwenden Sie `float(Standardwert)`, damit das Template nie fehlschlägt, und aktivieren Sie Keep-Alive, damit der Sollwert der gemessenen Temperatur folgt. Kann ein Template nicht ausgewertet werden, wird der Befehl übersprungen und ein Fehler protokolliert. Ein Template, das sich nicht kompilieren lässt, wird bei der Validierung der Konfiguration abgelehnt.
 
 ### Wie findet man die richtige Maßnahme?
 Um den richtige Auslöser zu finden, gehen Sie am besten zu "Entwicklertools / Dienste" und suchen Sie nach der aufzurufenden Aktion, der zu steuernden Entität und allen erforderlichen Parametern.
@@ -95,8 +110,8 @@ Ein Einschalt-Ereignis:
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: true
-  entity_id: binary_sensor.central_boiler
-  name: Zentralheizung
+  entity_id: binary_sensor.central_configuration_central_boiler
+  name: Central boiler
   state_attributes: null
 origin: LOCAL
 time_fired: "2024-01-14T11:33:52.342026+00:00"
@@ -111,7 +126,7 @@ Ein Ausschalt-Ereignis:
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: false
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Zentralheizung
   state_attributes: null
 origin: LOCAL

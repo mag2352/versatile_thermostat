@@ -1,7 +1,7 @@
 # Power Management - Load Shedding
 
 - [Power Management - Load Shedding](#power-management---load-shedding)
-    - [Example Use Case:](#example-use-case)
+  - [Example Use Case](#example-use-case)
   - [Configuring Power Management](#configuring-power-management)
 
 This feature allows you to regulate the electrical consumption of your heaters. Known as load shedding, it lets you limit the electrical consumption of your heating equipment if overconsumption conditions are detected.
@@ -15,7 +15,9 @@ The behavior of this feature is as follows:
 
 **WARNING:** This is **not a safety feature** but an optimization function to manage consumption at the expense of some heating degradation. Overconsumption is still possible depending on the frequency of your consumption sensor updates and the actual power used by your equipment. Always maintain a safety margin.
 
-### Example Use Case:
+For an `over_switch` VTherm controlling multiple heaters, each relay is evaluated separately. A relay whose Home Assistant state already reports heating is not counted again as marginal startup power. If that heater's consumption is not yet included in the measurement, the configured threshold may be temporarily exceeded. This software management does not replace electrical protection or protect the circuit breaker.
+
+## Example Use Case
 1. You have an electric meter limited to 11 kW,
 2. You occasionally charge an electric vehicle at 5 kW,
 3. This leaves 6 kW for everything else, including heating,
@@ -36,7 +38,7 @@ In the centralized configuration, if you have selected the `With power detection
 2. The entity ID of the **sensor for maximum allowed power**,
 3. The temperature to apply if load shedding is activated.
 
-Ensure that all power values use the same units (e.g., kW or W).
+Power units can be configured independently. Select W or kW for each VTherm's device power. In the central configuration, select W, kW, or Auto; Auto uses the unit declared by each central sensor. Values are normalized internally to W, so W and kW can be mixed safely.
 Having a **sensor for maximum allowed power** allows you to modify the maximum power dynamically using a scheduler or automation.
 
 Note that due to centralized load-shedding, it is not possible to override the consumption and maximum consumption sensors on individual _VTherms_. This configuration must be done in the centralized settings. See [Centralized Configuration](./creation.md#centralized-configuration).

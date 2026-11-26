@@ -1,11 +1,15 @@
 
 # Dépannages
 
+Pour vous aider à diagnostiquer ou expliquer une situation, ou à rechercher dans la documentation, essayez le [VTherm Assistant](https://www.versatile-thermostat.org/en/plugins/#jmcollin78/vtherm_assistant).
+
 - [Dépannages](#dépannages)
   - [Utilisation d'un Heatzy](#utilisation-dun-heatzy)
   - [Utilisation d'un radiateur avec un fil pilote (Nodon SIN-4-FP-21)](#utilisation-dun-radiateur-avec-un-fil-pilote-nodon-sin-4-fp-21)
   - [Utilisation d'un système Netatmo](#utilisation-dun-système-netatmo)
+  - [La chaudière centrale ne fonctionne pas](#la-chaudière-centrale-ne-fonctionne-pas)
   - [Seul le premier radiateur chauffe](#seul-le-premier-radiateur-chauffe)
+  - [Le pourcentage VTherm et le degré d'ouverture de la vanne diffèrent](#le-pourcentage-vtherm-et-le-degré-douverture-de-la-vanne-diffèrent)
   - [Le radiateur chauffe alors que la température de consigne est dépassée ou ne chauffe pas alors que la température de la pièce est bien en-dessous de la consigne](#le-radiateur-chauffe-alors-que-la-température-de-consigne-est-dépassée-ou-ne-chauffe-pas-alors-que-la-température-de-la-pièce-est-bien-en-dessous-de-la-consigne)
     - [Type `over_switch` ou `over_valve`](#type-over_switch-ou-over_valve)
     - [Type `over_climate`](#type-over_climate)
@@ -16,50 +20,21 @@
     - [Comment réparer ?](#comment-réparer-)
   - [Utilisation d'un groupe de personnes comme capteur de présence](#utilisation-dun-groupe-de-personnes-comme-capteur-de-présence)
   - [Activer les logs du Versatile Thermostat](#activer-les-logs-du-versatile-thermostat)
+    - [Utiliser le log-collector (méthode recommandée)](#utiliser-le-log-collector-méthode-recommandée)
+    - [Activer les logs dans Home Assistant (ancienne méthode)](#activer-les-logs-dans-home-assistant-ancienne-méthode)
   - [VTherm ne suit pas les changements de consigne faits directement depuis le sous-jacents (`over_climate`)](#vtherm-ne-suit-pas-les-changements-de-consigne-faits-directement-depuis-le-sous-jacents-over_climate)
   - [VTherm passe tout seul en mode 'clim' ou en mode 'chauffage'](#vtherm-passe-tout-seul-en-mode-clim-ou-en-mode-chauffage)
   - [La détection de fenêtre ouverte n'empêche pas le changement de preset](#la-détection-de-fenêtre-ouverte-nempêche-pas-le-changement-de-preset)
+  - [Erreur stabilization\_threshold is an invalid option](#erreur-stabilization_threshold-is-an-invalid-option)
 
 
 ## Utilisation d'un Heatzy
 
-Le Heatzy est maintenant pris en charge nativement par _VTherm_. Cf. [Démarrage rapide](quick-start.md#heatzy-ou-ecosy-ou-assimilé-entité-climate).
-
-Cette configuration est gardée pour mémoire uniquement.
-
-L'utilisation d'un Heatzy ou Nodon est possible à la condition d'utiliser un switch virtuel sur ce modèle :
-
-```yaml
-- platform: template
-  switches:
-    chauffage_sdb:
-      unique_id: chauffage_sdb
-      friendly_name: Chauffage salle de bain
-      value_template: "{{ is_state_attr('climate.salle_de_bain', 'preset_mode', 'comfort') }}"
-      icon_template: >-
-        {% if is_state_attr('climate.salle_de_bain', 'preset_mode', 'comfort') %}
-          mdi:radiator
-        {% elif is_state_attr('climate.salle_de_bain', 'preset_mode', 'away') %}
-          mdi:snowflake
-        {% else %}
-          mdi:radiator-disabled
-        {% endif %}
-      turn_on:
-        service: climate.set_preset_mode
-        entity_id: climate.salle_de_bain
-        data:
-          preset_mode: "comfort"
-      turn_off:
-        service: climate.set_preset_mode
-        entity_id: climate.salle_de_bain
-        data:
-          preset_mode: "eco"
-```
-Merci à @gael pour cet exemple.
+L'intégration Heatzy expose une entité `climate` dont l'état n'est pas le preset actif. Utilisez-la à travers un interrupteur virtuel, comme décrit sur la [page Heatzy](https://www.versatile-thermostat.org/fr/devices/heatzy/) du catalogue des matériels.
 
 ## Utilisation d'un radiateur avec un fil pilote (Nodon SIN-4-FP-21)
 
-Le Nodon est maintenant pris en charge nativement par _VTherm_. Cf. [Démarrage rapide](quick-start.md#nodon-sin-4-fp-21-ou-assimilé-fil-pilote).
+Le Nodon est pris en charge nativement par un _VTherm_ `over_switch` avec des commandes personnalisées : voir la [page des modules fil pilote](https://www.versatile-thermostat.org/fr/devices/pilot-wire-module/) du catalogue des matériels.
 
 Cette configuration est gardée pour mémoire uniquement.
 
@@ -97,12 +72,27 @@ Exemple :
 Un exemple plus complet est [ici](https://github.com/jmcollin78/versatile_thermostat/discussions/431#discussioncomment-11393065)
 
 ## Utilisation d'un système Netatmo
-Le système à base de TRV Netatmo fonctionne mal avec _VTherm_. Vous avez ici une discussion sur le fonctionnement particulier des systèmes Netatmo (en Français) : https://forum.hacf.fr/t/vannes-netatmo-et-vtherm/56063
+Le système à base de TRV Netatmo fonctionne mal avec _VTherm_. Vous avez ici une discussion sur le fonctionnement particulier des systèmes Netatmo (en Français) : https://forum.hacf.fr/t/vannes-netatmo-et-vtherm/56063. Ses limitations connues sont aussi décrites dans le [catalogue des matériels](https://www.versatile-thermostat.org/fr/devices/known-limitations/).
+
+## La chaudière centrale ne fonctionne pas
+
+Si la chaudière centrale ne se déclenche pas alors qu'un _VTherm_ demande du chauffage, vérifiez les trois points suivants :
+1. La fonction de chaudière centrale est activée dans la configuration centrale (« Ajouter une chaudière centrale »),
+2. Dans la configuration principale de chaque _VTherm_ qui doit la piloter, l'option « Déclencheur de chaudière centrale » est cochée.
+3. Enfin, dans les entités de la configuration centrale, le seuil de déclenchement par nombre d'équipements (`number.boiler_activation_threshold`) ou par puissance (`number.boiler_power_activation_threshold`) est configuré avec une valeur adaptée et supérieure à zéro. Seuls les équipements des _VTherm_ marqués comme déclencheurs sont comptabilisés, et la chaudière est activée dès que l'un des seuils non nul est franchi. Voir [le contrôle d'une chaudière centrale](feature-central-boiler.md) et le [choix des attributs de base](base-attributes.md#choix-des-attributs-de-base).
 
 ## Seul le premier radiateur chauffe
 
 En mode `over_switch` si plusieurs radiateurs sont configurés pour un même _VTherm_, l'alllumage va se faire de façon séquentiel pour lisser au plus possible les pics de consommation.
 Cela est tout à fait normal et voulu. C'est décrit ici : [Pour un thermostat de type ```thermostat_over_switch```](over-switch.md#thermostat-de-type-over_switch
+
+## Le pourcentage VTherm et le degré d'ouverture de la vanne diffèrent
+
+Avec un _VTherm_ `over_climate` utilisant le contrôle direct de la vanne, l'attribut `valve_open_percent` indique la demande brute calculée par _VTherm_. Le degré d'ouverture envoyé à la vanne peut être différent : les paramètres de réglage de la vanne (`opening_threshold`, `max_closing_degree`, `minimum_opening_degrees` et `max_opening_degrees`) transforment cette demande pour tenir compte de la calibration choisie.
+
+Il existe aussi un lien entre le seuil de régulation et le seuil d'ouverture : le `regulation_threshold` est utilisé comme seuil d'ouverture minimal lorsqu'il est supérieur au `opening_threshold` configuré. Ainsi, même avec les autres paramètres de vanne à leurs valeurs par défaut (0 à 100), un seuil de régulation non nul peut remapper la demande. Par exemple, avec un seuil de 5 %, une demande VTherm de 12 % peut produire un degré d'ouverture envoyé de 7 %. À 0 %, les deux valeurs restent alignées dans cette configuration.
+
+Cet écart est donc attendu et ne signifie pas, à lui seul, que la vanne est bloquée ou mal calibrée. Vérifiez les seuils et les limites configurés avant de déclencher une alerte fondée uniquement sur la comparaison de ces deux valeurs. Mettre `regulation_threshold` à 0 peut rétablir leur alignement lorsque les autres paramètres sont neutres, mais réduit le filtrage des petites variations et peut augmenter le nombre de commandes envoyées. Pour le détail des réglages, consultez [l'auto-régulation par contrôle direct de la vanne](self-regulation.md#auto-régulation-par-contrôle-direct-de-la-vanne).
 
 ## Le radiateur chauffe alors que la température de consigne est dépassée ou ne chauffe pas alors que la température de la pièce est bien en-dessous de la consigne
 
@@ -150,7 +140,7 @@ Exemple:
 
 [security mode](images/security-mode-symptome1.png)
 
-Si vous avez installé la carte [Versatile Thermostat UI Card](https://github.com/jmcollin78/versatile-thermostat-ui-card), le _VTherm_ en question aura cette forme là :
+Si vous avez installé la carte [Versatile Thermostat UI Card](https://www.versatile-thermostat.org/fr/plugins/#jmcollin78/versatile-thermostat-ui-card), le _VTherm_ en question aura cette forme là :
 
 [security mode UI Card](images/security-mode-symptome2.png)
 
@@ -213,16 +203,35 @@ template: !include templates.yaml
 ```
 
 ## Activer les logs du Versatile Thermostat
-Des fois, vous aurez besoin d'activer les logs pour afiner les analyses. Pour cela, éditer le fichier `logger.yaml` de votre configuration et configurer les logs comme suit :
+
+### Utiliser le log-collector (méthode recommandée)
+
+Pour collecter et analyser les logs du Versatile Thermostat, **il est vivement recommandé d'utiliser la fonction de téléchargement de logs intégrée** (log-collector). Cette méthode :
+- ✅ Collecte les logs **indépendamment du niveau configuré dans Home Assistant**
+- ✅ N'affecte pas les performances de Home Assistant
+- ✅ Permet de filtrer par période, thermostat, et niveau de gravité
+- ✅ Fournit un fichier téléchargeable facile à analyser
+
+Consultez la documentation complète : [Télécharger les logs passés - Diagnostic et dépannage](feature-logs-collector.md)
+
+Le fichier téléchargé peut ensuite être ouvert dans l'[analyseur de logs](https://www.versatile-thermostat.org/fr/debugger/) du site pour visualiser ce qui s'est passé. Pour ouvrir une issue, vous pouvez aussi joindre un extrait exporté depuis l'analyseur, centré sur la période du problème.
+
+### Activer les logs dans Home Assistant (ancienne méthode)
+
+Si vous avez besoin d'un mode de débogage plus avancé, vous pouvez activer les logs au niveau de Home Assistant en éditant le fichier `logger.yaml` :
 
 ```yaml
-default: xxxx
-logs:
-  custom_components.versatile_thermostat: info
+logger:
+  default: warning
+  logs:
+    custom_components.versatile_thermostat: debug
 ```
-Vous devez recharger la configuration yaml (Outils de dev / Yaml / Toute la configuration Yaml) ou redémarrer Home Assistant pour que ce changement soit pris en compte.
 
-Attention, en mode debug Versatile Thermostat est très verbeux et peut vite ralentir Home Assistant ou saturer votre disque dur. Si vous passez en mode debug pour une analyse d'anomalie il faut s'y mettre juste le temps de reproduire le bug et désactiver le mode debug juste après.
+Vous devez recharger la configuration YAML (Outils de développement / YAML / Toute la configuration YAML) ou redémarrer Home Assistant pour que ce changement soit pris en compte.
+
+⚠️ **Attention** : En mode debug, Versatile Thermostat est très verbeux et peut ralentir Home Assistant ou saturer votre disque dur. Cette approche n'est recommandée que pour un débogage avancé sur une courte durée. **Préférez le log-collector dans tous les cas normaux.**
+
+Le fichier `home-assistant.log` ainsi obtenu peut aussi être ouvert dans l'[analyseur de logs](https://www.versatile-thermostat.org/fr/debugger/).
 
 ## VTherm ne suit pas les changements de consigne faits directement depuis le sous-jacents (`over_climate`)
 
@@ -245,3 +254,9 @@ Exemple :
 2. **Ouverture de la fenêtre et attente** : preset reste sur Confort, **la température de consigne passe sur 10°** (hors gel). Cet état peut paraitre incohérent car la température de consigne n'est pas en accord avec le preset affiché,
 3. **Changement de preset en Boost** (par l'utilisateur ou par le Scheduler) : le preset change pour Boost mais la température de consigne reste à 10° (hors gel). Cet état peut aussi paraitre incohérent,
 4. **Fermeture de la fenêtre** : le preset reste sur Boost, la température de consigne passe sur 21° (Boost). L'incohérence a disparue et le changement de preset de l'utilisateur est bien appliqué.
+
+## Erreur stabilization_threshold is an invalid option
+
+Cette erreur apparait lors de la mise à jour de la version 8.6.0 ou précédente vers la version 8.6.1 ou ultérieur, pour les utilisateurs utilisant l'auto regulation
+en mode expert. Dans le mode expert, il y avait un paramètre `stabilization_threshold` à mettre dans le fichier `configuration.yaml`. Ce paramètre n'est plus utilisé
+depuis plusieurs années et a été retiré. Il vous faut le retirer de votre fichier `configuration.yaml`.

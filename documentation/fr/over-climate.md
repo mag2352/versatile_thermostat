@@ -5,13 +5,18 @@
   - [Configuration](#configuration)
     - [Les sous-jacents](#les-sous-jacents)
     - [Le mode AC](#le-mode-ac)
+    - [La synchronisation de la température interne des sous-jacents](#la-synchronisation-de-la-température-interne-des-sous-jacents)
     - [L'auto-régulation](#lauto-régulation)
+    - [Démarrage de la régulation par vanne avec des degrés sans retour](#démarrage-de-la-régulation-par-vanne-avec-des-degrés-sans-retour)
     - [L'auto-ventilation (auto-fan)](#lauto-ventilation-auto-fan)
     - [Compenser la température interne du sous-jacent](#compenser-la-température-interne-du-sous-jacent)
   - [Fonctions spécifiques](#fonctions-spécifiques)
   - [Suivre les changements de température du sous-jacent](#suivre-les-changements-de-température-du-sous-jacent)
+  - [Étape suivante](#étape-suivante)
 
 ## Pré-requis
+
+Les équipements pilotables par un _VTherm_ `over_climate` (climatisations, PAC, TRV...) sont listés dans le [catalogue des matériels](https://www.versatile-thermostat.org/fr/devices/?type=climate), et les vannes thermostatiques dans le [catalogue des TRV](https://www.versatile-thermostat.org/fr/devices/?type=trv).
 
 L'installation doit ressembler à ça :
 
@@ -38,6 +43,9 @@ Dans la "liste des équipements à contrôler" vous mettez les entités `climate
 
 Il est possible de choisir un thermostat `over_climate` qui commande une climatisation (réversible ou non) en cochant la case "AC Mode". Si l'équipement le permet, les 2 modes 'Chauffage' et 'Refroidissement' seront alors disponibles.
 
+### La synchronisation de la température interne des sous-jacents
+Cette fonction permet une bien meilleure régulation puisqu'elle synchronise le thermomètre interne des `climate` sous-jacents avec la température de la pièce mesurée par _VTherm_. Elle est décrite [ici](feature-sync_device_temp.md).
+
 ### L'auto-régulation
 
 En mode `over_climate`, le device utilise son propre algorithme de régulation : il s'allume / s'éteint et se met en pause tout seul en fonction de la consigne transmise par le VTherm à travers son entité `climate`. Il utilise pour ça son thermomètre interne et la consigne reçue.
@@ -52,6 +60,16 @@ Afin d'éviter de trop solliciter l'équipement sous-jacent (certain font un bip
 
 S'ils sont mal réglés, ces seuils peuvent empêcher une auto-régulation correcte puisque les nouvelles consignes ne seront pas envoyées.
 
+### Démarrage de la régulation par vanne avec des degrés sans retour
+
+Avec `auto_regulation_valve`, certaines entités `number` utilisées pour les degrés d’ouverture et de fermeture sont des consignes d’écriture sans retour d’état. Après un redémarrage de Home Assistant ou un rechargement de l’intégration, elles peuvent rester `unknown` alors que l’entité `climate` sous-jacente reste utilisable.
+
+Après l’installation de ses listeners normaux, VTherm inspecte une fois la paire ouverture/fermeture configurée. Seulement si chaque cible est numérique ou exactement `unknown`, si toutes les limites de régulation et toutes les bornes `min`/`max` des entités `number` sont valides, il calcule la paire de fermeture nominale avec une demande `0`. Il écrit au plus une fois, via le helper normal des nombres, et uniquement sur les cibles exactement `unknown` ; les cibles numériques ne sont jamais réécrites.
+
+Si une cible est `unavailable`, absente, `None`, non numérique ou possède des bornes invalides, VTherm n’écrit rien sur les deux cibles. Un appel de service, même sans erreur, n’est pas un retour d’état : le sous-jacent reste non initialisé jusqu’aux événements numériques normaux reçus pour toutes les cibles requises par `UnderlyingStateManager`. Il n’y a ni timeout, ni retry, ni fallback, ni override de readiness.
+
+Les diagnostics sous `vtherm_over_climate_valve.underlying_valves` exposent `seed_targets` et `seed_attempted_targets` ; ils décrivent seulement les tentatives et jamais une disponibilité. Vérifiez les entités configurées, leurs bornes `min`/`max` et le retour numérique. Après correction d’une configuration ou d’un appareil, rechargez l’intégration ou redémarrez Home Assistant afin de créer un nouveau budget one-shot.
+
 ### L'auto-ventilation (auto-fan)
 
 Ce mode introduit en 4.3 permet de forcer l'usage de la ventilation si l'écart de température est important. En effet, en activant la ventilation, la répartition se fait plus rapidement ce qui permet de gagner du temps dans l'atteinte de la température cible.
@@ -59,11 +77,14 @@ Vous pouvez choisir quelle ventilation vous voulez activer entre les paramètres
 
 Il faut évidemment que votre équipement sous-jacent soit équipé d'une ventilation et qu'il soit pilotable pour que cela fonctionne.
 Si votre équipement ne comprend pas le mode Turbo, le mode `Forte` sera utilisé en remplacement.
-Une fois l'écart de température redevenu faible, la ventilation se mettra dans un mode "normal" qui dépend de votre équipement à savoir (dans l'ordre) : `Silence (mute)`, `Auto (auto)`, `Faible (low)`. La première valeur qui est possible pour votre équipement sera choisie.
+Une fois l'écart de température redevenu faible, la ventilation se mettra dans un mode "normal" qui dépend de votre équipement à savoir (dans l'ordre) : `Silence (mute ou quiet)`, `Auto (auto)`, `Faible (low)`. La première valeur qui est possible pour votre équipement sera choisie.
+
+> ![Astuce](images/tips.png) _*Plugin externe*_
+> Une version enrichie de l'auto-fan est disponible sous forme de plugin externe. Ce plugin offre des possibilités de configuration supplémentaires et une gestion plus fine de la ventilation automatique. Consultez la page [plugins](https://www.versatile-thermostat.org/fr/plugins/#jmcollin78/vtherm_auto_fan_extended) pour découvrir ce plugin.
 
 ### Compenser la température interne du sous-jacent
 
-Attention : cette option ne doit pas être utilisée avec une régulation par contrôle direct de la vanne si une entité de calibrage a été fournie.
+Attention : cette option ne doit pas être utilisée avec une régulation par contrôle direct de la vanne.
 
 Quelque fois, il arrive que le thermomètre interne du sous-jacent (TRV, climatisation, ...) soit tellement faux que l'auto-régulation ne suffise pas à réguler.
 Cela arrive lorsque le thermomètre interne est trop près de la source de chaleur. La température interne monte alors beaucoup plus vite que la température de la pièce, ce qui génère des défauts dans la régulation.
@@ -97,6 +118,10 @@ Les fonctions spécifiques qui nécessite un paramétrage à ce type de VTherm s
 1. l'auto-start/stop : arrêt et démarrage automatique du _VTherm selon la prévision d'usage. Elle est décrite ici fonction [auto-start/sop](feature-auto-start-stop.md),
 2. si la régulation par vanne est choisie, le paramétrage de l'algo TPI est accessible depuis le menu. cf ([algorithmes](algorithms.md))
 3. si la régulation par vanne est choisie, vous pouvez mettre le _VTherm_ en mode dormant (sleep). Le mode dormant est un mode réservé à ce type de thermostat qui permet de couper le _VTherm_ tout en maintenant la vanne totalement 100% ouverte. Pour appliquer le mode dormant vous avez 2 moyens :
+
+   > [!NOTE]
+   > Le mode dormant (`sleep` / `Zzz`) nécessite une carte compatible avec Versatile Thermostat, comme la [Versatile Thermostat UI Card](additions.md#versatile-thermostat-ui-card). La carte thermostat par défaut de Home Assistant n'est pas supportée : elle liste `sleep` dans `hvac_modes` mais ne peut pas le sélectionner (`climate.set_hvac_mode` rejette `sleep`, qui n'est pas un `HVACMode` standard de HA).
+
    1. soit avec la [VTherm UI Card](additions.md#versatile-thermostat-ui-card) en appuyant sur le bouton du mode 'Zzz',
    2. soit en appelant une action nommée `service_set_hvac_mode_sleep`. Cf. [Actions](reference.md#actions-services)
 
@@ -107,9 +132,27 @@ Si vous êtes dans ce cas, une entité a été ajoutée dans l'appareil _VTherm_
 
 ![Suivre les changements de température](images/entity-follow-under-temp-change.png)
 
-Lorsque cette entité est 'On', tous les changements de température ou d'état faits directement sur l'équipement sous-jacents sont répercutés sur le _VTherm_.
+Lorsque cette entité est 'On', les changements de mode HVAC continuent d'être suivis selon le comportement existant. Le suivi des consignes est actif dès le démarrage, même si _VTherm_ n'a encore rien envoyé au TRV. Une nouvelle consigne observée est retenue comme candidate puis appliquée si elle reste stable pendant 5 secondes ; chaque nouvelle valeur distincte relance ce délai. Les doublons ne le prolongent pas. Si _VTherm_ a déjà envoyé une consigne, les valeurs égales ou trop proches de cette dernière sont considérées comme ambiguës et ne sont pas adoptées automatiquement. Sans consigne envoyée de référence, un ancien écho distinct peut être pris pour un geste manuel.
 
-Attention, si vous utilisez cette fonction, votre équipement est maintenant contrôlé par 2 moyens : _VTherm_ et par vous même directement. Les ordres peuvent être contradictoires et cela peut induire une incompréhension sur l'état de l'équipement. _VTherm_ est équipé d'un mécanisme de temporisation qui évite les boucles : l'utilisateur donne une consigne qui est captée par _VTherm_ qui change la consigne, ... Cette temporisation peut faire que le changement fait directement sur l'équipement est ignoré si ces changements sont trop rapprochés dans le temps.
+Attention, si vous utilisez cette fonction, votre équipement est contrôlé par deux moyens : _VTherm_ et vous-même directement. Les ordres peuvent être contradictoires. Une consigne TRV admissible est traitée comme un changement manuel de la température cible : _VTherm_ passe en consigne manuelle (`NONE`) et, si une [durée de dérogation manuelle](feature-timed-preset.md#dérogation-manuelle-avec-retour-automatique) est configurée, démarre une dérogation manuelle qui revient au preset précédent à son expiration. Sans durée de dérogation manuelle, il annule le preset temporisé en cours sans restaurer l'ancienne demande. Cela ne modifie pas les priorités des fenêtres ou protections. Sous OFF, la consigne demandée est mémorisée sans rallumer le thermostat ni lever un OFF forcé.
+
+Le budget de suivi est un compteur unique par _VTherm_. Il compte chaque changement de mode ou de consigne effectivement adopté depuis un sous-jacent, ainsi que chaque tentative de commande `climate` sortante induite par le suivi. Une adoption suivie d'une commande peut donc consommer deux unités ; observer une candidate ou attendre qu'elle se stabilise n'en consomme pas. Les appels aux entités `number` de la régulation directe par vanne ne sont pas inclus.
+
+Le suivi est suspendu lorsque le compteur atteint trois. Si la troisième unité correspond à une tentative sortante, cette commande est envoyée et la suivante est bloquée. Si une adoption porte le compteur à trois, elle est conservée, mais les commandes de suivi suivantes sont bloquées. Les commandes directes depuis _VTherm_ restent possibles. Une nouvelle commande reçue par l'interface de _VTherm_ ou par un service Home Assistant réarme le compteur. Les gestes physiques sur le sous-jacent et les cycles normaux de régulation ne le réinitialisent pas : il n'y a pas de remise à zéro temporisée. Une automatisation qui envoie une nouvelle commande à _VTherm_ peut réarmer le compteur à chaque tour ; la limite s'applique donc entre commandes reçues, pas à toute la boucle. Après un redémarrage de Home Assistant ou un rechargement de l'intégration, le compteur repart à zéro et le suivi est réarmé. Une valeur TRV restaurée sans nouveau changement observé n'est pas adoptée ; dès qu'une nouvelle consigne est rapportée, elle peut être suivie sans attendre un ordre de _VTherm_. Sans référence d'envoi, un ancien écho distinct peut être pris à tort pour un geste.
+
+Un retour ancien, différent de la dernière commande, peut encore être pris à tort pour un geste manuel ; un retour ambigu peut au contraire être écarté. Le délai de 5 secondes n'établit pas l'origine d'un changement et ne garantit ni la capture de tous les gestes ni l'absence de toute boucle entretenue par une automatisation externe.
+
+Certaines vannes (par exemple la Sonoff TRVZB) changent leur propre consigne quand _VTherm_ les éteint. Une consigne remontée moins de 15 secondes après que _VTherm_ a envoyé OFF à l'équipement est donc ignorée.
 
 Certains équipements (Daikin par exemple), changent d'état tout seul. Si la case est cochée, cela peut éteindre le _VTherm_ alors que ce n'est pas ce que vous souhaitiez.
 C'est pour ça qu'il est préférable de ne pas l'utiliser. Cela génère beaucoup d'incompréhensions et de nombreuses demandes de support.
+
+Ces limites résultent d'un compromis délibéré entre sécurité et facilité d'utilisation. Elles sont volontairement restrictives et non paramétrables par conception. Elles ne seront pas modifiées ; il faudra faire avec ces limites.
+
+> ![Astuce](images/tips.png) _*Télécommande physique*_
+> Si vous souhaitez utiliser un thermostat physique distinct (un thermostat mural par exemple) comme télécommande d'un _VTherm_, consultez le plugin [VTherm climate replication](https://www.versatile-thermostat.org/fr/plugins/#jmcollin78/vtherm_climate_replication).
+
+## Étape suivante
+
+- Avec l'auto-régulation par contrôle direct de la vanne : configurez la [régulation par vanne](self-regulation.md#auto-régulation-par-contrôle-direct-de-la-vanne), puis les [coefficients du TPI](algorithms.md#configurez-les-coefficients-de-lalgorithme-tpi).
+- Sans contrôle direct de la vanne : réglez si besoin l'[auto-régulation](self-regulation.md#autres-auto-régulation), puis passez aux [presets](feature-presets.md) (menu « Pre-réglages »).

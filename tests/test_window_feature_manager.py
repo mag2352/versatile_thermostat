@@ -1,5 +1,6 @@
 # pylint: disable=unused-argument, line-too-long, protected-access, too-many-lines
-""" Test the Window management """
+"""Test the Window management"""
+
 import logging
 from datetime import datetime, timedelta
 from unittest.mock import patch, call, PropertyMock, AsyncMock, MagicMock
@@ -448,6 +449,289 @@ async def test_window_feature_manager_sensor_event_action_turn_off(
     await hass.async_block_till_done()
 
 
+async def test_window_sensor_removal_invalidates_pending_timer_from_bus(
+    hass: HomeAssistant,
+):
+    """Removal invalidates the old timer and a recreated sensor resumes normally."""
+    fake_vtherm = MagicMock(spec=BaseThermostat)
+    type(fake_vtherm).name = PropertyMock(return_value="the name")
+    type(fake_vtherm).async_get_last_state = AsyncMock(return_value=None)
+    type(fake_vtherm).auto_start_stop_manager = PropertyMock(return_value=None)
+    fake_vtherm.update_states = AsyncMock()
+    fake_vtherm.update_custom_attributes = MagicMock()
+
+    window_manager = FeatureWindowManager(fake_vtherm, hass)
+    window_manager.post_init(
+        {
+            CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+            CONF_USE_WINDOW_FEATURE: True,
+            CONF_WINDOW_DELAY: 10,
+            CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+        }
+    )
+    window_manager._window_state = STATE_OFF
+    scheduled = []
+
+    def capture_timer(_hass, delay, callback):
+        cancel_timer = MagicMock()
+        scheduled.append((delay, callback, cancel_timer))
+        return cancel_timer
+
+    def fire_state(new_state, old_state):
+        hass.bus.async_fire(
+            EVENT_STATE_CHANGED,
+            {
+                "entity_id": "sensor.the_window_sensor",
+                "old_state": (State("sensor.the_window_sensor", old_state) if old_state is not None else None),
+                "new_state": (State("sensor.the_window_sensor", new_state) if new_state is not None else None),
+            },
+        )
+
+    await window_manager.start_listening()
+    with patch(
+        "custom_components.versatile_thermostat.feature_window_manager.async_call_later",
+        side_effect=capture_timer,
+    ), patch("homeassistant.helpers.condition.state", return_value=True):
+        fire_state(STATE_ON, STATE_OFF)
+        await hass.async_block_till_done()
+        stale_callback = scheduled[0][1]
+
+        fire_state(None, STATE_ON)
+        await hass.async_block_till_done()
+        assert window_manager.window_state == STATE_OFF
+        scheduled[0][2].assert_called_once()
+        fake_vtherm.update_states.assert_not_awaited()
+
+        await stale_callback(None)
+        assert window_manager.window_state == STATE_OFF
+        fake_vtherm.update_states.assert_not_awaited()
+
+        fire_state(STATE_ON, None)
+        await hass.async_block_till_done()
+        assert len(scheduled) == 2
+        assert scheduled[1][0] == timedelta(seconds=10)
+        assert window_manager.window_state == STATE_OFF
+
+        await scheduled[1][1](None)
+
+    assert window_manager.window_state == STATE_ON
+    fake_vtherm.update_states.assert_awaited_once_with(True)
+    window_manager.stop_listening()
+
+
+@pytest.mark.parametrize(
+    "current_state, recreated_state, expected_delay",
+    [
+        (STATE_OFF, STATE_ON, timedelta(seconds=11)),
+        (STATE_ON, STATE_OFF, timedelta(seconds=37)),
+    ],
+)
+async def test_window_sensor_recreation_uses_directional_delay_from_bus(hass: HomeAssistant, current_state, recreated_state, expected_delay):
+    """A recreated sensor starts the normal delay from the retained state."""
+    fake_vtherm = MagicMock(spec=BaseThermostat)
+    type(fake_vtherm).name = PropertyMock(return_value="the name")
+    type(fake_vtherm).async_get_last_state = AsyncMock(return_value=None)
+    type(fake_vtherm).auto_start_stop_manager = PropertyMock(return_value=None)
+    fake_vtherm.update_states = AsyncMock()
+    fake_vtherm.update_custom_attributes = MagicMock()
+
+    window_manager = FeatureWindowManager(fake_vtherm, hass)
+    window_manager.post_init(
+        {
+            CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+            CONF_USE_WINDOW_FEATURE: True,
+            CONF_WINDOW_DELAY: 11,
+            CONF_WINDOW_OFF_DELAY: 37,
+            CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+        }
+    )
+    window_manager._window_state = current_state
+    scheduled = []
+
+    def capture_timer(_hass, delay, callback):
+        cancel_timer = MagicMock()
+        scheduled.append((delay, callback, cancel_timer))
+        return cancel_timer
+
+    await window_manager.start_listening()
+    with patch(
+        "custom_components.versatile_thermostat.feature_window_manager.async_call_later",
+        side_effect=capture_timer,
+    ), patch("homeassistant.helpers.condition.state", return_value=True):
+        hass.bus.async_fire(
+            EVENT_STATE_CHANGED,
+            {
+                "entity_id": "sensor.the_window_sensor",
+                "old_state": None,
+                "new_state": State("sensor.the_window_sensor", recreated_state),
+            },
+        )
+        await hass.async_block_till_done()
+
+        assert len(scheduled) == 1
+        assert scheduled[0][0] == expected_delay
+        assert window_manager.window_state == current_state
+
+        await scheduled[0][1](None)
+
+    assert window_manager.window_state == recreated_state
+    fake_vtherm.update_states.assert_awaited_once_with(True)
+    window_manager.stop_listening()
+
+
+@pytest.mark.parametrize("unusable_state", [STATE_UNKNOWN, STATE_UNAVAILABLE])
+@pytest.mark.parametrize(
+    "current_state, pending_state",
+    [(STATE_OFF, STATE_ON), (STATE_ON, STATE_OFF)],
+)
+async def test_window_sensor_unusable_state_invalidates_callback_but_attributes_do_not(hass: HomeAssistant, unusable_state, current_state, pending_state):
+    """Attribute-only events preserve a timer; unusable state invalidates it."""
+    fake_vtherm = MagicMock(spec=BaseThermostat)
+    type(fake_vtherm).name = PropertyMock(return_value="the name")
+    type(fake_vtherm).async_get_last_state = AsyncMock(return_value=None)
+    type(fake_vtherm).auto_start_stop_manager = PropertyMock(return_value=None)
+    fake_vtherm.update_states = AsyncMock()
+    fake_vtherm.update_custom_attributes = MagicMock()
+
+    window_manager = FeatureWindowManager(fake_vtherm, hass)
+    window_manager.post_init(
+        {
+            CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+            CONF_USE_WINDOW_FEATURE: True,
+            CONF_WINDOW_DELAY: 11,
+            CONF_WINDOW_OFF_DELAY: 37,
+            CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+        }
+    )
+    window_manager._window_state = current_state
+    scheduled = []
+
+    def capture_timer(_hass, delay, callback):
+        cancel_timer = MagicMock()
+        scheduled.append((delay, callback, cancel_timer))
+        return cancel_timer
+
+    def fire_state(new_state, old_state):
+        hass.bus.async_fire(
+            EVENT_STATE_CHANGED,
+            {
+                "entity_id": "sensor.the_window_sensor",
+                "old_state": (State("sensor.the_window_sensor", old_state) if old_state is not None else None),
+                "new_state": (State("sensor.the_window_sensor", new_state) if new_state is not None else None),
+            },
+        )
+
+    await window_manager.start_listening()
+    with patch(
+        "custom_components.versatile_thermostat.feature_window_manager.async_call_later",
+        side_effect=capture_timer,
+    ), patch("homeassistant.helpers.condition.state", return_value=True):
+        fire_state(pending_state, current_state)
+        await hass.async_block_till_done()
+        original_callback = scheduled[0][1]
+        original_cancel = scheduled[0][2]
+
+        fire_state(pending_state, pending_state)
+        await hass.async_block_till_done()
+        assert len(scheduled) == 1
+        original_cancel.assert_not_called()
+
+        fire_state(unusable_state, pending_state)
+        await hass.async_block_till_done()
+        original_cancel.assert_called_once()
+        await original_callback(None)
+        assert window_manager.window_state == current_state
+        fake_vtherm.update_states.assert_not_awaited()
+
+        fire_state(current_state, None)
+        await hass.async_block_till_done()
+        assert len(scheduled) == 1
+
+        fire_state(pending_state, None)
+        await hass.async_block_till_done()
+        assert len(scheduled) == 2
+        await original_callback(None)
+        assert window_manager.window_state == current_state
+
+        await scheduled[1][1](None)
+
+    assert window_manager.window_state == pending_state
+    fake_vtherm.update_states.assert_awaited_once_with(True)
+    window_manager.stop_listening()
+
+
+async def test_window_listener_restart_and_lifecycle_invalidate_callbacks(
+    hass: HomeAssistant,
+):
+    """Restarting listening deduplicates listeners and lifecycle changes stale timers."""
+    fake_vtherm = MagicMock(spec=BaseThermostat)
+    type(fake_vtherm).name = PropertyMock(return_value="the name")
+    type(fake_vtherm).async_get_last_state = AsyncMock(return_value=None)
+    type(fake_vtherm).auto_start_stop_manager = PropertyMock(return_value=None)
+    fake_vtherm.update_states = AsyncMock()
+    fake_vtherm.update_custom_attributes = MagicMock()
+
+    config = {
+        CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+        CONF_USE_WINDOW_FEATURE: True,
+        CONF_WINDOW_DELAY: 11,
+        CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+    }
+    window_manager = FeatureWindowManager(fake_vtherm, hass)
+    window_manager.post_init(config)
+    window_manager._window_state = STATE_OFF
+    scheduled = []
+
+    def capture_timer(_hass, delay, callback):
+        cancel_timer = MagicMock()
+        scheduled.append((callback, cancel_timer))
+        return cancel_timer
+
+    def fire_open_event():
+        hass.bus.async_fire(
+            EVENT_STATE_CHANGED,
+            {
+                "entity_id": "sensor.the_window_sensor",
+                "old_state": State("sensor.the_window_sensor", STATE_OFF),
+                "new_state": State("sensor.the_window_sensor", STATE_ON),
+            },
+        )
+
+    with patch(
+        "custom_components.versatile_thermostat.feature_window_manager.async_call_later",
+        side_effect=capture_timer,
+    ), patch("homeassistant.helpers.condition.state", return_value=True):
+        await window_manager.start_listening()
+        await window_manager.start_listening()
+        assert len(window_manager._active_listener) == 1
+
+        fire_open_event()
+        await hass.async_block_till_done()
+        assert len(scheduled) == 1
+
+        first_callback, first_cancel = scheduled[0]
+        window_manager.stop_listening()
+        assert window_manager._active_listener == []
+        first_cancel.assert_called_once()
+        await first_callback(None)
+        assert window_manager.window_state == STATE_OFF
+
+        await window_manager.start_listening()
+        assert len(window_manager._active_listener) == 1
+        fire_open_event()
+        await hass.async_block_till_done()
+        assert len(scheduled) == 2
+
+        second_callback, second_cancel = scheduled[1]
+        window_manager.post_init(config)
+        second_cancel.assert_called_once()
+        await second_callback(None)
+        assert window_manager.window_state == STATE_UNKNOWN
+        fake_vtherm.update_states.assert_not_awaited()
+
+    window_manager.stop_listening()
+
+
 @pytest.mark.parametrize(
     "current_state, long_enough, new_state, nb_call, window_state, is_window_detected",
     [
@@ -613,9 +897,7 @@ async def test_window_feature_manager_window_auto(
 
     # Add a fake temp point for the window_auto_algo. We need at least 4 points
     for i in range(0, 4):
-        window_manager._window_auto_algo.add_temp_measurement(
-            17 + (i * (new_temp - 17) / 4), now, True
-        )
+        window_manager._window_auto_algo.add_temp_measurement(17 + (i * (new_temp - 17) / 4), now, True)
         now = now + timedelta(minutes=5)
 
     # fmt:off
@@ -649,3 +931,92 @@ async def test_window_feature_manager_window_auto(
 
     window_manager.stop_listening()
     await hass.async_block_till_done()
+
+
+async def test_window_feature_manager_restore_bypass_from_saved_state(
+    hass: HomeAssistant,
+):
+    """Test that the window bypass is restored from the saved state.
+
+    The bypass is exposed under the "window_manager" sub-dict by
+    add_custom_attributes, so start_listening must read it from there.
+    """
+
+    fake_vtherm = MagicMock(spec=BaseThermostat)
+    type(fake_vtherm).name = PropertyMock(return_value="the name")
+    type(fake_vtherm).preset_mode = PropertyMock(return_value=VThermPreset.COMFORT)
+    type(fake_vtherm).auto_start_stop_manager = PropertyMock(return_value=None)
+
+    # 1. a manager which saved a bypass set to True
+    saving_manager = FeatureWindowManager(fake_vtherm, hass)
+    saving_manager.post_init(
+        {
+            CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+            CONF_USE_WINDOW_FEATURE: True,
+            CONF_WINDOW_DELAY: 10,
+            CONF_WINDOW_OFF_DELAY: 10,
+            CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+        }
+    )
+    await saving_manager.set_window_bypass(True)
+
+    saved_attributes = {}
+    saving_manager.add_custom_attributes(saved_attributes)
+    assert saved_attributes["window_manager"]["is_window_bypass"] is True
+
+    # 2. a new manager restoring that state
+    type(fake_vtherm).async_get_last_state = AsyncMock(return_value=State("climate.the_vtherm", HVACMode.HEAT, attributes=saved_attributes))
+
+    restoring_manager = FeatureWindowManager(fake_vtherm, hass)
+    restoring_manager.post_init(
+        {
+            CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+            CONF_USE_WINDOW_FEATURE: True,
+            CONF_WINDOW_DELAY: 10,
+            CONF_WINDOW_OFF_DELAY: 10,
+            CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+        }
+    )
+    await restoring_manager.start_listening()
+
+    assert restoring_manager.is_window_bypass is True
+
+    restored_attributes = {}
+    restoring_manager.add_custom_attributes(restored_attributes)
+    assert restored_attributes["window_manager"]["is_window_bypass"] is True
+
+    restoring_manager.stop_listening()
+
+
+async def test_window_feature_manager_restore_bypass_off_stays_off(
+    hass: HomeAssistant,
+):
+    """Test that a saved bypass set to False is not restored as True."""
+
+    fake_vtherm = MagicMock(spec=BaseThermostat)
+    type(fake_vtherm).name = PropertyMock(return_value="the name")
+    type(fake_vtherm).preset_mode = PropertyMock(return_value=VThermPreset.COMFORT)
+    type(fake_vtherm).auto_start_stop_manager = PropertyMock(return_value=None)
+    type(fake_vtherm).async_get_last_state = AsyncMock(
+        return_value=State(
+            "climate.the_vtherm",
+            HVACMode.HEAT,
+            attributes={"window_manager": {"is_window_bypass": False}},
+        )
+    )
+
+    window_manager = FeatureWindowManager(fake_vtherm, hass)
+    window_manager.post_init(
+        {
+            CONF_WINDOW_SENSOR: "sensor.the_window_sensor",
+            CONF_USE_WINDOW_FEATURE: True,
+            CONF_WINDOW_DELAY: 10,
+            CONF_WINDOW_OFF_DELAY: 10,
+            CONF_WINDOW_ACTION: CONF_WINDOW_TURN_OFF,
+        }
+    )
+    await window_manager.start_listening()
+
+    assert window_manager.is_window_bypass is False
+
+    window_manager.stop_listening()

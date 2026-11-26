@@ -15,10 +15,29 @@
           "temp_min": "Ελάχιστη επιτρεπτή θερμοκρασία",
           "temp_max": "Μέγιστη επιτρεπτή θερμοκρασία",
           "device_power": "Ισχύς συσκευής",
+          "power_unit": "Μονάδα ισχύος (για την ισχύ της συσκευής)",
           "use_window_feature": "Χρήση ανίχνευσης παραθύρου",
           "use_motion_feature": "Χρήση ανίχνευσης κίνησης",
           "use_power_feature": "Χρήση διαχείρισης ισχύος",
           "use_presence_feature": "Χρήση ανίχνευσης παρουσίας"
+        },
+        "data_description": {
+          "cycle_min": "Minimum duration of one heating/cooling cycle in minutes to avoid too frequent switching",
+          "temp_min": "Minimum temperature allowed for the thermostat",
+          "temp_max": "Maximum temperature allowed for the thermostat",
+          "step_temperature": "Temperature step for setting the target temperature",
+          "temperature_sensor_entity_id": "Room temperature sensor entity id",
+          "last_seen_temperature_sensor_entity_id": "Last seen room temperature sensor entity id. Should be datetime sensor",
+          "external_temperature_sensor_entity_id": "Outdoor temperature sensor entity id. Not used if central configuration is selected",
+          "power_unit": "Μονάδα κατανάλωσης ισχύος της συσκευής"
+        }
+      },
+      "main": {
+        "data": {
+          "power_unit": "Μονάδα ισχύος (για την ισχύ της συσκευής)"
+        },
+        "data_description": {
+          "power_unit": "Μονάδα κατανάλωσης ισχύος της συσκευής"
         }
       },
       "lock": {
@@ -49,6 +68,7 @@
           "climate_entity3_id": "3η υποκείμενη κλιματική οντότητα",
           "climate_entity4_id": "4η υποκείμενη κλιματική οντότητα",
           "ac_mode": "Λειτουργία AC",
+          "sync_device_internal_temp": "Συγχρονισμός εσωτερικής θερμοκρασίας συσκευής",
           "valve_entity_id": "1ος αριθμός βαλβίδας",
           "valve_entity2_id": "2ος αριθμός βαλβίδας",
           "valve_entity3_id": "3ος αριθμός βαλβίδας",
@@ -56,6 +76,10 @@
           "auto_regulation_mode": "Αυτόματη ρύθμιση",
           "auto_regulation_dtemp": "Όριο ρύθμισης",
           "auto_regulation_periode_min": "Ελάχιστη περίοδος ρύθμισης",
+          "opening_threshold_degree": "Κατώφλι ανοίγματος",
+          "min_opening_degrees": "Ελάχιστοι βαθμοί ανοίγματος",
+          "max_opening_degrees": "Μέγιστος βαθμός ανοίγματος",
+          "max_closing_degree": "Μέγιστος βαθμός κλεισίματος",
           "inverse_switch_command": "Αντίστροφη εντολή διακόπτη",
           "auto_fan_mode": "Auto fan mode"
         },
@@ -64,12 +88,13 @@
           "heater_entity2_id": "Προαιρετική 2η ταυτότητα οντότητας θερμαντήρα. Αφήστε κενό αν δεν χρησιμοποιείται",
           "heater_entity3_id": "Προαιρετική 3η ταυτότητα οντότητας θερμαντήρα. Αφήστε κενό αν δεν χρησιμοποιείται",
           "heater_entity4_id": "Προαιρετική 4η ταυτότητα οντότητας θερμαντήρα. Αφήστε κενό αν δεν χρησιμοποιείται",
-          "proportional_function": "Αλγόριθμος προς χρήση (TPI είναι ο μόνος για τώρα)",
+          "proportional_function": "Αλγόριθμος προς χρήση (άλλοι αλγόριθμοι μπορούν να εγκατασταθούν ως {plugins_link})",
           "climate_entity_id": "Ταυτότητα υποκείμενης κλιματικής οντότητας",
           "climate_entity2_id": "2η ταυτότητα υποκείμενης κλιματικής οντότητας",
           "climate_entity3_id": "3η ταυτότητα υποκείμενης κλιματικής οντότητας",
           "climate_entity4_id": "4η ταυτότητα υποκείμενης κλιματικής οντότητας",
           "ac_mode": "Χρήση της λειτουργίας Κλιματισμού (AC)",
+          "sync_device_internal_temp": "Συγχρονισμός εσωτερικής θερμοκρασίας συσκευής",
           "valve_entity_id": "1η ταυτότητα αριθμού βαλβίδας",
           "valve_entity2_id": "2η ταυτότητα αριθμού βαλβίδας",
           "valve_entity3_id": "3η ταυτότητα αριθμού βαλβίδας",
@@ -77,6 +102,10 @@
           "auto_regulation_mode": "Αυτόματη προσαρμογή της στοχευμένης θερμοκρασίας",
           "auto_regulation_dtemp": "Το όριο σε ° κάτω από το οποίο η αλλαγή θερμοκρασίας δεν θα αποστέλλεται",
           "auto_regulation_periode_min": "Διάρκεια σε λεπτά μεταξύ δύο ενημερώσεων ρύθμισης",
+          "opening_threshold_degree": "Τιμή ανοίγματος της βαλβίδας κάτω από την οποία η βαλβίδα πρέπει να θεωρείται κλειστή (και τότε θα ισχύει το 'max_closing_degree')",
+          "min_opening_degrees": "Ελάχιστη τιμή βαθμού ανοίγματος για κάθε υποκείμενη συσκευή, διαχωρισμένη με κόμμα. Προεπιλεγμένη τιμή 0. Παράδειγμα: 20, 25, 30",
+          "max_opening_degrees": "Μέγιστη τιμή του βαθμού ανοίγματος. Η βαλβίδα δεν θα ανοίξει ποτέ περισσότερο από αυτήν την τιμή",
+          "max_closing_degree": "Μέγιστη τιμή του βαθμού κλεισίματος. Η βαλβίδα δεν θα κλείσει ποτέ περισσότερο από αυτήν την τιμή. Ορίστε το στο 100 για πλήρες κλείσιμο της βαλβίδας",
           "inverse_switch_command": "Για διακόπτη με πιλοτικό καλώδιο και δίοδο μπορεί να χρειαστεί να αντιστρέψετε την εντολή",
           "auto_fan_mode": "Automatically activate fan when huge heating/cooling is necessary"
         }
@@ -140,11 +169,15 @@
       },
       "power": {
         "title": "Διαχείριση Ενέργειας",
-        "description": "Χαρακτηριστικά διαχείρισης ενέργειας.\nΔίνει τον αισθητήρα ενέργειας και τον μέγιστο αισθητήρα ενέργειας του σπιτιού σας.\nΣτη συνέχεια καθορίστε την κατανάλωση ενέργειας του θερμαντήρα όταν είναι ενεργοποιημένος.\nΌλοι οι αισθητήρες και η ισχύς της συσκευής πρέπει να έχουν την ίδια μονάδα (kW ή W).\nΑφήστε το αντίστοιχο entity_id κενό αν δεν χρησιμοποιείται.",
+        "description": "Χαρακτηριστικά διαχείρισης ισχύος.\nΕπιλέξτε W ή kW για την ισχύ συσκευής κάθε VTherm και W, kW ή Αυτόματα για την κεντρική διαμόρφωση.\nΟι τιμές κανονικοποιούνται εσωτερικά, επομένως οι μονάδες W και kW μπορούν να συνδυαστούν με ασφάλεια.",
         "data": {
           "power_sensor_entity_id": "Ταυτότητα οντότητας αισθητήρα ενέργειας",
           "max_power_sensor_entity_id": "Ταυτότητα οντότητας αισθητήρα μέγιστης ενέργειας",
+          "power_unit": "Κεντρική μονάδα ισχύος",
           "power_temp": "Θερμοκρασία για Αποβολή Ενέργειας"
+        },
+        "data_description": {
+          "power_unit": "Επιλέξτε μονάδα ισχύος ή Αυτόματα για αυτόματη ανίχνευση από τον αισθητήρα"
         }
       },
       "presence": {
@@ -168,20 +201,99 @@
           "minimal_activation_delay": "Ελάχιστη καθυστέρηση ενεργοποίησης",
           "safety_delay_min": "Καθυστέρηση ασφαλείας (σε λεπτά)",
           "safety_min_on_percent": "Ελάχιστο ποσοστό ισχύος για ενεργοποίηση λειτουργίας ασφαλείας",
-          "safety_default_on_percent": "Ποσοστό ισχύος για χρήση σε λειτουργία ασφαλείας"
+          "safety_default_on_percent": "Ποσοστό ισχύος για χρήση σε λειτουργία ασφαλείας",
+          "repair_incorrect_state": "Επιδιόρθωση ακατάλληλης κατάστασης",
+          "manual_override_duration_min": "Διάρκεια χειροκίνητης παράκαμψης (λεπτά)"
         },
         "data_description": {
           "minimal_activation_delay": "Καθυστέρηση σε δευτερόλεπτα κάτω από την οποία η συσκευή δεν θα ενεργοποιηθεί",
           "safety_delay_min": "Μέγιστη επιτρεπτή καθυστέρηση σε λεπτά μεταξύ δύο μετρήσεων θερμοκρασίας. Πέρα από αυτή την καθυστέρηση, ο θερμοστάτης θα μεταβεί σε κατάσταση ασφαλείας",
           "safety_min_on_percent": "Ελάχιστη τιμή ποσοστού θέρμανσης για την ενεργοποίηση του προεπιλεγμένου ασφάλειας. Κάτω από αυτό το ποσοστό ισχύος το θερμοστάτη δεν θα πάει στο προεπιλεγμένο ασφάλειας.",
-          "safety_default_on_percent": "Η προεπιλεγμένη τιμή ποσοστού ισχύος θέρμανσης στο προεπιλεγμένο ασφάλειας. Ορίστε σε 0 για να απενεργοποιήσετε τη θερμάστρα στο παρόν ασφάλειας."
+          "safety_default_on_percent": "Η προεπιλεγμένη τιμή ποσοστού ισχύος θέρμανσης στο προεπιλεγμένο ασφάλειας. Ορίστε σε 0 για να απενεργοποιήσετε τη θερμάστρα στο παρόν ασφάλειας.",
+          "repair_incorrect_state": "Αυτόματη επιδιόρθωση της ακατάλληλης κατάστασης των υποκείμενων οντοτήτων όταν εντοπιστεί. Η λειτουργία θα ξαναστείλει την επιθυμητή εντολή εάν η κατάσταση της υποκείμενης συσκευής δεν ταιριάζει με την αναμενόμενη κατάσταση.",
+          "manual_override_duration_min": "Μετά από χειροκίνητη αλλαγή θερμοκρασίας, το VTherm επιστρέφει στην προηγούμενη προεπιλογή μετά από αυτή τη διάρκεια (σε λεπτά). Το 0 απενεργοποιεί τη λειτουργία."
+        }
+      },
+      "sync_device_internal_temp": {
+        "title": "Synchronize device internal temperature",
+        "description": "Configuration to synchronize the internal temperature of the underlying devices with selected entities",
+        "data": {
+          "sync_with_calibration": "Apply offset calibration",
+          "sync_entity_ids": "Entities id used for synchronization"
+        },
+        "data_description": {
+          "sync_with_calibration": "Check to apply the offset calibration when synchronizing the internal temperature. Uncheck to directly copy the temperature from the selected entities",
+          "sync_entity_ids": "The list of the entities used to synchronize the internal temperature of the underlying devices. There should be one per underlying device. Should be a calibration entity if checkbox is selected or a temperature entity otherwise. Both are `number` entities."
+        }
+      },
+      "valve_regulation": {
+        "title": "Αυτορύθμιση με βαλβίδα",
+        "description": "Διαμόρφωση για αυτορύθμιση με άμεσο έλεγχο της βαλβίδας",
+        "data": {
+          "offset_calibration_entity_ids": "Οντότητες βαθμονόμησης μετατόπισης",
+          "opening_degree_entity_ids": "Οντότητες βαθμού ανοίγματος",
+          "closing_degree_entity_ids": "Οντότητες βαθμού κλεισίματος",
+          "proportional_function": "Αλγόριθμος",
+          "opening_threshold_degree": "Κατώφλι ανοίγματος",
+          "min_opening_degrees": "Ελάχιστοι βαθμοί ανοίγματος",
+          "max_opening_degrees": "Μέγιστος βαθμός ανοίγματος",
+          "max_closing_degree": "Μέγιστος βαθμός κλεισίματος"
+        },
+        "data_description": {
+          "offset_calibration_entity_ids": "Η λίστα των οντοτήτων 'βαθμονόμησης μετατόπισης'. Ορίστε το εάν το TRV σας διαθέτει την οντότητα για καλύτερη ρύθμιση. Θα πρέπει να υπάρχει ένα για κάθε υποκείμενη κλιματική οντότητα",
+          "opening_degree_entity_ids": "Η λίστα των οντοτήτων 'βαθμού ανοίγματος'. Θα πρέπει να υπάρχει ένα για κάθε υποκείμενη κλιματική οντότητα",
+          "closing_degree_entity_ids": "Η λίστα των οντοτήτων 'βαθμού κλεισίματος'. Ορίστε το εάν το TRV σας διαθέτει την οντότητα για καλύτερη ρύθμιση. Θα πρέπει να υπάρχει ένα για κάθε υποκείμενη κλιματική οντότητα",
+          "proportional_function": "Αλγόριθμος προς χρήση (άλλοι αλγόριθμοι μπορούν να εγκατασταθούν ως {plugins_link})",
+          "opening_threshold_degree": "Τιμή ανοίγματος της βαλβίδας κάτω από την οποία η βαλβίδα πρέπει να θεωρείται κλειστή (και τότε θα ισχύει το 'max_closing_degree')",
+          "min_opening_degrees": "Ελάχιστη τιμή βαθμού ανοίγματος για κάθε υποκείμενη συσκευή, διαχωρισμένη με κόμμα. Προεπιλεγμένη τιμή 0. Παράδειγμα: 20, 25, 30",
+          "max_opening_degrees": "Μέγιστη τιμή του βαθμού ανοίγματος. Η βαλβίδα δεν θα ανοίξει ποτέ περισσότερο από αυτήν την τιμή",
+          "max_closing_degree": "Μέγιστη τιμή του βαθμού κλεισίματος. Η βαλβίδα δεν θα κλείσει ποτέ περισσότερο από αυτήν την τιμή. Ορίστε το στο 100 για πλήρες κλείσιμο της βαλβίδας"
+        }
+      },
+      "auto_tpi_configuration": {
+        "data": {
+          "auto_tpi_cooling_rate": "Ρυθμός ψύξης ({unit}/h)"
+        },
+        "data_description": {
+          "auto_tpi_cooling_rate": "Ικανότητα ψύξης του καλοριφέρ ({unit} ανά ώρα). Αφήστε την τιμή στο 0 για αυτόματη εκμάθηση (bootstrap)."
+        }
+      },
+      "heating_failure_detection": {
+        "title": "Heating failure detection",
+        "description": "Configure the heating failure detection feature. This detects anomalies when heating is expected but temperature doesn't increase, or when heating is off but temperature keeps rising.",
+        "data": {
+          "use_heating_failure_detection_feature": "Enable heating failure detection",
+          "use_heating_failure_detection_central_config": "Use central heating failure detection configuration",
+          "heating_failure_threshold": "Heating failure threshold",
+          "cooling_failure_threshold": "Cooling failure threshold",
+          "heating_failure_detection_delay": "Detection delay (minutes)",
+          "temperature_change_tolerance": "Temperature change tolerance (°C)",
+          "failure_detection_enable_template": "Detection enable template"
+        },
+        "data_description": {
+          "use_heating_failure_detection_feature": "Enable the detection of heating anomalies for VTherms with TPI",
+          "use_heating_failure_detection_central_config": "Check to use the central heating failure detection configuration. Uncheck to use specific parameters for this VTherm",
+          "heating_failure_threshold": "On percent threshold above which heating should cause temperature increase (0.9 = 90%)",
+          "cooling_failure_threshold": "On percent threshold below which temperature should not increase (0.0 = 0%)",
+          "heating_failure_detection_delay": "Time in minutes to wait before checking if temperature has changed as expected",
+          "temperature_change_tolerance": "Minimum temperature change in degrees to consider significant. Smaller changes are ignored to filter sensor noise (default: 0.5°C)",
+          "failure_detection_enable_template": "An optional Jinja2 template that must return True to enable detection. Useful to temporarily disable detection when an external heat source is active (e.g., `is_state('binary_sensor.wood_stove', 'off')` in double curly braces). If empty, detection is always enabled."
         }
       }
     },
     "error": {
-      "unknown": "Απρόσμενο σφάλμα",
+      "unknown": "Απροσδόκητο λάθος",
       "unknown_entity": "Άγνωστο αναγνωριστικό οντότητας",
-      "window_open_detection_method": "Πρέπει να χρησιμοποιείται μόνο μία μέθοδος ανίχνευσης ανοιχτού παραθύρου. Χρησιμοποιήστε αισθητήρα ή αυτόματη ανίχνευση μέσω του κατωφλίου θερμοκρασίας, αλλά όχι και τα δύο"
+      "window_open_detection_method": "Πρέπει να χρησιμοποιηθεί μόνο μία μέθοδος ανίχνευσης ανοιχτού παραθύρου. Χρησιμοποιήστε αισθητήρα ή αυτόματη ανίχνευση μέσω κατωφλίου θερμοκρασίας αλλά όχι και τα δύο",
+      "no_central_config": "You cannot check 'use central configuration' because no central configuration was found. You need to create a Versatile Thermostat of type 'Central Configuration' to use it.",
+      "service_configuration_format": "The format of the service configuration is wrong",
+      "valve_regulation_nb_entities_incorrect": "The number of valve entities for valve regulation should be equal to the number of underlyings",
+      "sync_device_internal_temp_nb_entities_incorrect": "The number of entities for synchronize device internal temperature should be equal to the number of underlyings",
+      "min_opening_degrees_format": "A comma separated list of positive integer is expected. Example: 20, 25, 30",
+      "max_opening_degrees_format": "Αναμένεται μια λίστα θετικών ακεραίων μεταξύ 0 και 100 χωρισμένη με κόμματα. Παράδειγμα: 80, 85, 90",
+      "min_max_opening_degrees_inconsistent": "Για κάθε υποκείμενη συσκευή, το max_opening_degrees πρέπει να είναι αυστηρά μεγαλύτερο από το min_opening_degrees. Ελέγξτε τη διαμόρφωσή σας.",
+      "valve_control_parameters_cardinality_incorrect": "Οι λίστες ελάχιστου και μέγιστου βαθμού ανοίγματος δεν μπορούν να περιέχουν περισσότερες τιμές από τις διαμορφωμένες βαλβίδες",
+      "vswitch_configuration_incorrect": "The command customization configuration is incorrect. It is required for underlying entities that are not switches, and the format must be service_name[/attribute:value]. More information is available in the README"
     },
     "abort": {
       "already_configured": "Η συσκευή έχει ήδη ρυθμιστεί"
@@ -206,6 +318,15 @@
           "use_motion_feature": "Χρήση ανίχνευσης κίνησης",
           "use_power_feature": "Χρήση διαχείρισης ενέργειας",
           "use_presence_feature": "Χρήση ανίχνευσης παρουσίας"
+        },
+        "data_description": {
+          "cycle_min": "Minimum duration of one heating/cooling cycle in minutes to avoid too frequent switching",
+          "temp_min": "Minimum temperature allowed for the thermostat",
+          "temp_max": "Maximum temperature allowed for the thermostat",
+          "step_temperature": "Temperature step for setting the target temperature",
+          "temperature_sensor_entity_id": "Room temperature sensor entity id",
+          "last_seen_temperature_sensor_entity_id": "Last seen room temperature sensor entity id. Should be datetime sensor",
+          "external_temperature_sensor_entity_id": "Outdoor temperature sensor entity id. Not used if central configuration is selected"
         }
       },
       "type": {
@@ -222,6 +343,7 @@
           "climate_entity3_id": "3η υποκείμενη κλιματική οντότητα",
           "climate_entity4_id": "4η υποκείμενη κλιματική οντότητα",
           "ac_mode": "Λειτουργία AC",
+          "sync_device_internal_temp": "Συγχρονισμός εσωτερικής θερμοκρασίας συσκευής",
           "valve_entity_id": "1ος αριθμός βαλβίδας",
           "valve_entity2_id": "2ος αριθμός βαλβίδας",
           "valve_entity3_id": "3ος αριθμός βαλβίδας",
@@ -230,19 +352,24 @@
           "auto_regulation_dtemp": "Όριο ρύθμισης",
           "auto_regulation_periode_min": "Ελάχιστη περίοδος ρύθμισης",
           "inverse_switch_command": "Αντίστροφη εντολή διακόπτη",
-          "auto_fan_mode": "Auto fan mode"
+          "auto_fan_mode": "Auto fan mode",
+          "opening_threshold_degree": "Κατώφλι ανοίγματος",
+          "min_opening_degrees": "Ελάχιστοι βαθμοί ανοίγματος",
+          "max_opening_degrees": "Μέγιστος βαθμός ανοίγματος",
+          "max_closing_degree": "Μέγιστος βαθμός κλεισίματος"
         },
         "data_description": {
           "heater_entity_id": "Υποχρεωτική ταυτότητα οντότητας θερμαντήρα",
           "heater_entity2_id": "Προαιρετική ταυτότητα οντότητας 2ου θερμαντήρα. Αφήστε το κενό αν δεν χρησιμοποιείται",
           "heater_entity3_id": "Προαιρετική ταυτότητα οντότητας 3ου θερμαντήρα. Αφήστε το κενό αν δεν χρησιμοποιείται",
           "heater_entity4_id": "Προαιρετική ταυτότητα οντότητας 4ου θερμαντήρα. Αφήστε το κενό αν δεν χρησιμοποιείται",
-          "proportional_function": "Αλγόριθμος που θα χρησιμοποιηθεί (TPI είναι ο μόνος για τώρα)",
+          "proportional_function": "Αλγόριθμος προς χρήση (άλλοι αλγόριθμοι μπορούν να εγκατασταθούν ως {plugins_link})",
           "climate_entity_id": "Ταυτότητα οντότητας υποκείμενου κλίματος",
           "climate_entity2_id": "Ταυτότητα οντότητας 2ου υποκείμενου κλίματος",
           "climate_entity3_id": "Ταυτότητα οντότητας 3ου υποκείμενου κλίματος",
           "climate_entity4_id": "Ταυτότητα οντότητας 4ου υποκείμενου κλίματος",
           "ac_mode": "Χρήση της λειτουργίας Κλιματισμού (AC)",
+          "sync_device_internal_temp": "Συγχρονισμός εσωτερικής θερμοκρασίας συσκευής",
           "valve_entity_id": "Ταυτότητα οντότητας 1ης βαλβίδας",
           "valve_entity2_id": "Ταυτότητα οντότητας 2ης βαλβίδας",
           "valve_entity3_id": "Ταυτότητα οντότητας 3ης βαλβίδας",
@@ -251,7 +378,11 @@
           "auto_regulation_dtemp": "Το κατώφλι σε °C κάτω από το οποίο η αλλαγή της θερμοκρασίας δεν θα αποστέλλεται",
           "auto_regulation_periode_min": "Διάρκεια σε λεπτά μεταξύ δύο ενημερώσεων ρύθμισης",
           "inverse_switch_command": "Για διακόπτες με πιλοτικό καλώδιο και δίοδο μπορεί να χρειαστεί να αντιστραφεί η εντολή",
-          "auto_fan_mode": "Automatically activate fan when huge heating/cooling is necessary"
+          "auto_fan_mode": "Automatically activate fan when huge heating/cooling is necessary",
+          "opening_threshold_degree": "Τιμή ανοίγματος της βαλβίδας κάτω από την οποία η βαλβίδα πρέπει να θεωρείται κλειστή (και τότε θα ισχύει το 'max_closing_degree')",
+          "min_opening_degrees": "Ελάχιστη τιμή βαθμού ανοίγματος για κάθε υποκείμενη συσκευή, διαχωρισμένη με κόμμα. Προεπιλεγμένη τιμή 0. Παράδειγμα: 20, 25, 30",
+          "max_opening_degrees": "Μέγιστη τιμή του βαθμού ανοίγματος. Η βαλβίδα δεν θα ανοίξει ποτέ περισσότερο από αυτήν την τιμή",
+          "max_closing_degree": "Μέγιστη τιμή του βαθμού κλεισίματος. Η βαλβίδα δεν θα κλείσει ποτέ περισσότερο από αυτήν την τιμή. Ορίστε το στο 100 για πλήρες κλείσιμο της βαλβίδας"
         }
       },
       "tpi": {
@@ -341,13 +472,19 @@
           "minimal_activation_delay": "Ελάχιστη καθυστέρηση ενεργοποίησης",
           "safety_delay_min": "Καθυστέρηση ασφαλείας (σε λεπτά)",
           "safety_min_on_percent": "Ελάχιστο ποσοστό ισχύος για τη λειτουργία ασφαλείας",
-          "safety_default_on_percent": "Ποσοστό ισχύος που θα χρησιμοποιηθεί στη λειτουργία ασφαλείας"
+          "safety_default_on_percent": "Ποσοστό ισχύος που θα χρησιμοποιηθεί στη λειτουργία ασφαλείας",
+          "repair_incorrect_state": "Repair incorrect state",
+          "manual_override_duration_min": "Διάρκεια χειροκίνητης παράκαμψης (λεπτά)",
+          "use_advanced_central_config": "Use central advanced configuration"
         },
         "data_description": {
           "minimal_activation_delay": "Καθυστέρηση σε δευτερόλεπτα κάτω από την οποία ο εξοπλισμός δεν θα ενεργοποιηθεί",
           "safety_delay_min": "Μέγιστη επιτρεπόμενη καθυστέρηση σε λεπτά μεταξύ δύο μετρήσεων θερμοκρασίας. Πάνω από αυτή την καθυστέρηση, ο θερμοστάτης θα μεταβεί σε κατάσταση ασφαλείας",
           "safety_min_on_percent": "Ελάχιστη τιμή ποσοστού θέρμανσης για ενεργοποίηση του προεπιλεγμένου ασφαλείας. Κάτω από αυτό το ποσοστό ισχύος, ο θερμοστάτης δεν θα μεταβεί στο προεπιλεγμένο ασφαλείας",
-          "safety_default_on_percent": "Η προεπιλεγμένη τιμή ποσοστού ισχύος θέρμανσης στο προεπιλεγμένο ασφαλείας. Ορίστε σε 0 για να απενεργοποιήσετε τη θερμάστρα στο παρόν ασφαλείας"
+          "safety_default_on_percent": "Η προεπιλεγμένη τιμή ποσοστού ισχύος θέρμανσης στο προεπιλεγμένο ασφαλείας. Ορίστε σε 0 για να απενεργοποιήσετε τη θερμάστρα στο παρόν ασφαλείας",
+          "repair_incorrect_state": "Automatically repair incorrect state of underlying entities when detected. The feature will re-send the desired command if the underlying device state doesn't match the expected state.",
+          "manual_override_duration_min": "Μετά από χειροκίνητη αλλαγή θερμοκρασίας, το VTherm επιστρέφει στην προηγούμενη προεπιλογή μετά από αυτή τη διάρκεια (σε λεπτά). Το 0 απενεργοποιεί τη λειτουργία.",
+          "use_advanced_central_config": "Check to use the central advanced configuration. Uncheck to use a specific advanced configuration for this VTherm"
         }
       },
       "lock": {
@@ -363,12 +500,87 @@
           "use_lock_central_config": "Επιλέξτε για χρήση της κεντρικής διαμόρφωσης κλειδώματος. Αποεπιλέξτε για χρήση συγκεκριμένης διαμόρφωσης κλειδώματος για αυτόν τον VTherm",
           "lock_code": "Ο κωδικός PIN για το ξεκλείδωμα του θερμοστάτη (4 ψηφία)"
         }
+      },
+      "sync_device_internal_temp": {
+        "title": "Synchronize device internal temperature",
+        "description": "Configuration to synchronize the internal temperature of the underlying devices with selected entities",
+        "data": {
+          "sync_with_calibration": "Apply offset calibration",
+          "sync_entity_ids": "Entities id used for synchronization"
+        },
+        "data_description": {
+          "sync_with_calibration": "Check to apply the offset calibration when synchronizing the internal temperature. Uncheck to directly copy the temperature from the selected entities",
+          "sync_entity_ids": "The list of the entities used to synchronize the internal temperature of the underlying devices. There should be one per underlying device. Should be a calibration entity if checkbox is selected or a temperature entity otherwise. Both are `number` entities."
+        }
+      },
+      "valve_regulation": {
+        "title": "Αυτορύθμιση με βαλβίδα - {name}",
+        "description": "Διαμόρφωση για αυτορύθμιση με άμεσο έλεγχο της βαλβίδας",
+        "data": {
+          "offset_calibration_entity_ids": "Οντότητες βαθμονόμησης μετατόπισης",
+          "opening_degree_entity_ids": "Οντότητες βαθμού ανοίγματος",
+          "closing_degree_entity_ids": "Οντότητες βαθμού κλεισίματος",
+          "proportional_function": "Αλγόριθμος",
+          "opening_threshold_degree": "Κατώφλι ανοίγματος",
+          "min_opening_degrees": "Ελάχιστοι βαθμοί ανοίγματος",
+          "max_opening_degrees": "Μέγιστος βαθμός ανοίγματος",
+          "max_closing_degree": "Μέγιστος βαθμός κλεισίματος"
+        },
+        "data_description": {
+          "offset_calibration_entity_ids": "Η λίστα των οντοτήτων 'βαθμονόμησης μετατόπισης'. Ορίστε το εάν το TRV σας διαθέτει την οντότητα για καλύτερη ρύθμιση. Θα πρέπει να υπάρχει ένα για κάθε υποκείμενη κλιματική οντότητα",
+          "opening_degree_entity_ids": "Η λίστα των οντοτήτων 'βαθμού ανοίγματος'. Θα πρέπει να υπάρχει ένα για κάθε υποκείμενη κλιματική οντότητα",
+          "closing_degree_entity_ids": "Η λίστα των οντοτήτων 'βαθμού κλεισίματος'. Ορίστε το εάν το TRV σας διαθέτει την οντότητα για καλύτερη ρύθμιση. Θα πρέπει να υπάρχει ένα για κάθε υποκείμενη κλιματική οντότητα",
+          "proportional_function": "Αλγόριθμος προς χρήση (άλλοι αλγόριθμοι μπορούν να εγκατασταθούν ως {plugins_link})",
+          "opening_threshold_degree": "Τιμή ανοίγματος της βαλβίδας κάτω από την οποία η βαλβίδα πρέπει να θεωρείται κλειστή (και τότε θα ισχύει το 'max_closing_degree')",
+          "min_opening_degrees": "Ελάχιστη τιμή βαθμού ανοίγματος για κάθε υποκείμενη συσκευή, διαχωρισμένη με κόμμα. Προεπιλεγμένη τιμή 0. Παράδειγμα: 20, 25, 30",
+          "max_opening_degrees": "Μέγιστη τιμή του βαθμού ανοίγματος. Η βαλβίδα δεν θα ανοίξει ποτέ περισσότερο από αυτήν την τιμή",
+          "max_closing_degree": "Μέγιστη τιμή του βαθμού κλεισίματος. Η βαλβίδα δεν θα κλείσει ποτέ περισσότερο από αυτήν την τιμή. Ορίστε το στο 100 για πλήρες κλείσιμο της βαλβίδας"
+        }
+      },
+      "auto_tpi_configuration": {
+        "data": {
+          "auto_tpi_cooling_rate": "Ρυθμός ψύξης ({unit}/h)"
+        },
+        "data_description": {
+          "auto_tpi_cooling_rate": "Ικανότητα ψύξης του καλοριφέρ ({unit} ανά ώρα). Αφήστε την τιμή στο 0 για αυτόματη εκμάθηση (bootstrap)."
+        }
+      },
+      "heating_failure_detection": {
+        "title": "Heating failure detection",
+        "description": "Configure the heating failure detection feature. This detects anomalies when heating is expected but temperature doesn't increase, or when heating is off but temperature keeps rising.",
+        "data": {
+          "use_heating_failure_detection_feature": "Enable heating failure detection",
+          "use_heating_failure_detection_central_config": "Use central heating failure detection configuration",
+          "heating_failure_threshold": "Heating failure threshold",
+          "cooling_failure_threshold": "Cooling failure threshold",
+          "heating_failure_detection_delay": "Detection delay (minutes)",
+          "temperature_change_tolerance": "Temperature change tolerance (°C)",
+          "failure_detection_enable_template": "Detection enable template"
+        },
+        "data_description": {
+          "use_heating_failure_detection_feature": "Enable the detection of heating anomalies for VTherms with TPI",
+          "use_heating_failure_detection_central_config": "Check to use the central heating failure detection configuration. Uncheck to use specific parameters for this VTherm",
+          "heating_failure_threshold": "On percent threshold above which heating should cause temperature increase (0.9 = 90%)",
+          "cooling_failure_threshold": "On percent threshold below which temperature should not increase (0.0 = 0%)",
+          "heating_failure_detection_delay": "Time in minutes to wait before checking if temperature has changed as expected",
+          "temperature_change_tolerance": "Minimum temperature change in degrees to consider significant. Smaller changes are ignored to filter sensor noise (default: 0.5°C)",
+          "failure_detection_enable_template": "An optional Jinja2 template that must return True to enable detection. Useful to temporarily disable detection when an external heat source is active (e.g., `is_state('binary_sensor.wood_stove', 'off')` in double curly braces). If empty, detection is always enabled."
+        }
       }
     },
     "error": {
       "unknown": "Απροσδόκητο λάθος",
       "unknown_entity": "Άγνωστο αναγνωριστικό οντότητας",
-      "window_open_detection_method": "Πρέπει να χρησιμοποιηθεί μόνο μία μέθοδος ανίχνευσης ανοιχτού παραθύρου. Χρησιμοποιήστε αισθητήρα ή αυτόματη ανίχνευση μέσω κατωφλίου θερμοκρασίας αλλά όχι και τα δύο"
+      "window_open_detection_method": "Πρέπει να χρησιμοποιηθεί μόνο μία μέθοδος ανίχνευσης ανοιχτού παραθύρου. Χρησιμοποιήστε αισθητήρα ή αυτόματη ανίχνευση μέσω κατωφλίου θερμοκρασίας αλλά όχι και τα δύο",
+      "no_central_config": "You cannot check 'use central configuration' because no central configuration was found. You need to create a Versatile Thermostat of type 'Central Configuration' to use it.",
+      "service_configuration_format": "The format of the service configuration is wrong",
+      "valve_regulation_nb_entities_incorrect": "The number of valve entities for valve regulation should be equal to the number of underlyings",
+      "sync_device_internal_temp_nb_entities_incorrect": "The number of entities for synchronize device internal temperature should be equal to the number of underlyings",
+      "min_opening_degrees_format": "A comma separated list of positive integer is expected. Example: 20, 25, 30",
+      "max_opening_degrees_format": "Αναμένεται μια λίστα θετικών ακεραίων μεταξύ 0 και 100 χωρισμένη με κόμματα. Παράδειγμα: 80, 85, 90",
+      "min_max_opening_degrees_inconsistent": "Για κάθε υποκείμενη συσκευή, το max_opening_degrees πρέπει να είναι αυστηρά μεγαλύτερο από το min_opening_degrees. Ελέγξτε τη διαμόρφωσή σας.",
+      "valve_control_parameters_cardinality_incorrect": "Οι λίστες ελάχιστου και μέγιστου βαθμού ανοίγματος δεν μπορούν να περιέχουν περισσότερες τιμές από τις διαμορφωμένες βαλβίδες",
+      "vswitch_configuration_incorrect": "The command customization configuration is incorrect. It is required for underlying entities that are not switches, and the format must be service_name[/attribute:value]. More information is available in the README"
     },
     "abort": {
       "already_configured": "Η συσκευή έχει ήδη ρυθμιστεί"
@@ -400,6 +612,19 @@
         "auto_fan_high": "High",
         "auto_fan_turbo": "Turbo"
       }
+    },
+    "power_unit": {
+      "options": {
+        "w": "Watt (W)",
+        "kw": "Kilowatt (kW)"
+      }
+    },
+    "central_power_unit": {
+      "options": {
+        "w": "Watt (W)",
+        "kw": "Kilowatt (kW)",
+        "auto": "Αυτόματη (αυτόματη ανίχνευση από τον αισθητήρα)"
+      }
     }
   },
   "entity": {
@@ -415,6 +640,12 @@
           }
         }
       }
+    }
+  },
+  "services": {
+    "set_hvac_mode_sleep": {
+      "name": "Ρύθμιση λειτουργίας HVAC σε αναστολή",
+      "description": "Θέτει ένα VTherm σε εποχική αναστολή. Εμφανίζεται ως απενεργοποιημένο και, για over_climate με άμεσο έλεγχο βαλβίδας και over_valve, στέλνει ακατέργαστο αίτημα ανοίγματος βαλβίδας 100%. Το φυσικό άνοιγμα εξακολουθεί να υπόκειται στον ρυθμισμένο έλεγχο βαλβίδας και στα όρια της οντότητας number."
     }
   }
 }

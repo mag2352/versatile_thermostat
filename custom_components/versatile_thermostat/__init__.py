@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Mapping
+from itertools import chain
 
 import asyncio
 import logging
+from vtherm_api.log_collector import get_vtherm_logger
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
@@ -14,78 +16,116 @@ from homeassistant.const import SERVICE_RELOAD, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.config_entries import ConfigEntry, ConfigType
 from homeassistant.core import HomeAssistant, CoreState, callback
 from homeassistant.helpers.service import async_register_admin_service
-
-from .base_thermostat import BaseThermostat
-
-from .const import (
-    DOMAIN,
-    PLATFORMS,
-    CONFIG_VERSION,
-    CONFIG_MINOR_VERSION,
-    CONF_AUTO_REGULATION_LIGHT,
-    CONF_AUTO_REGULATION_MEDIUM,
-    CONF_AUTO_REGULATION_STRONG,
-    CONF_AUTO_REGULATION_SLOW,
-    CONF_AUTO_REGULATION_EXPERT,
-    CONF_SHORT_EMA_PARAMS,
-    CONF_SAFETY_MODE,
-    CONF_SAFETY_DELAY_MIN,
-    CONF_SAFETY_MIN_ON_PERCENT,
-    CONF_SAFETY_DEFAULT_ON_PERCENT,
-    CONF_THERMOSTAT_CENTRAL_CONFIG,
-    CONF_THERMOSTAT_TYPE,
-    CONF_USE_WINDOW_FEATURE,
-    CONF_USE_MOTION_FEATURE,
-    CONF_USE_PRESENCE_FEATURE,
-    CONF_USE_POWER_FEATURE,
-    CONF_USE_CENTRAL_BOILER_FEATURE,
-    CONF_POWER_SENSOR,
-    CONF_PRESENCE_SENSOR,
-    CONF_UNDERLYING_LIST,
-    CONF_HEATER,
-    CONF_HEATER_2,
-    CONF_HEATER_3,
-    CONF_HEATER_4,
-    CONF_CLIMATE,
-    CONF_CLIMATE_2,
-    CONF_CLIMATE_3,
-    CONF_CLIMATE_4,
-    CONF_VALVE,
-    CONF_VALVE_2,
-    CONF_VALVE_3,
-    CONF_VALVE_4,
-    CONF_THERMOSTAT_SWITCH,
-    CONF_THERMOSTAT_CLIMATE,
-    CONF_THERMOSTAT_VALVE,
-    CONF_MAX_ON_PERCENT,
-    CONF_AUTO_TPI_MODE,
-    CONF_AUTO_TPI_ENABLE_UPDATE_CONFIG,
-    CONF_AUTO_TPI_ENABLE_NOTIFICATION,
-    CONF_AUTO_TPI_CALCULATION_METHOD,
-    CONF_AUTO_TPI_EMA_ALPHA,
-    CONF_AUTO_TPI_AVG_INITIAL_WEIGHT,
-    CONF_AUTO_TPI_MAX_COEF_INT,
-    CONF_AUTO_TPI_EMA_DECAY_RATE,
-    CONF_AUTO_TPI_KEEP_EXT_LEARNING,
-    CONF_AUTO_TPI_CONTINUOUS_LEARNING,
-    CONF_AUTO_TPI_HEATER_HEATING_TIME,
-    CONF_AUTO_TPI_HEATER_COOLING_TIME,
-    CONF_AUTO_TPI_HEATING_POWER,
-    CONF_AUTO_TPI_COOLING_POWER,
-    AUTO_TPI_METHOD_AVG,
+from homeassistant.const import UnitOfTemperature
+from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
+from homeassistant.helpers.entity_registry import (
+    DeletedRegistryEntry,
+    RegistryEntry,
+    async_get as async_get_entity_registry,
 )
 
-from .vtherm_api import VersatileThermostatAPI
+from vtherm_api.log_collector import VThermLogHandler, async_export_logs, async_register_log_download_endpoint, DEFAULT_MAX_AGE_HOURS
+from .base_thermostat import BaseThermostat
 
-_LOGGER = logging.getLogger(__name__)
+from .const import *  # pylint: disable=wildcard-import, unused-wildcard-import
+
+from .vtherm_central_api import VersatileThermostatAPI
+
+_LOGGER = get_vtherm_logger(__name__)
+
+
+def _is_auto_start_stop_migration_eligible(entry_data: Mapping[str, object]) -> bool:
+    """Return whether the core auto-start/stop feature still needs migration."""
+    return entry_data.get(CONF_USE_AUTO_START_STOP_FEATURE) is True and CONF_AUTO_START_STOP_MIGRATED_BY not in entry_data
+
+
+async def _migrate_auto_start_stop_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Hand the auto-start/stop decision of one entry over to the plugin.
+
+    Keep the legacy level and exact entity IDs in the thermostat entry so a
+    dedicated plugin entry created later can retain settings and references.
+
+    Returns True when the entry was written.
+    """
+    eligible = _is_auto_start_stop_migration_eligible(entry.data)
+    if not eligible and entry.data.get(CONF_AUTO_START_STOP_MIGRATED_BY) != AUTO_START_STOP_MIGRATED_BY_VTHERM_AUTO_START_STOP:
+        return False
+
+    api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api(hass)
+    new_data = dict(entry.data)
+    if eligible:
+        new_data.update({
+            CONF_USE_AUTO_START_STOP_FEATURE: False,
+            CONF_AUTO_START_STOP_MIGRATED_BY: AUTO_START_STOP_MIGRATED_BY_VTHERM_AUTO_START_STOP,
+        })
+    entity_ids = _core_auto_start_stop_entity_ids(hass, entry)
+    if eligible or entity_ids:
+        new_data[CONF_AUTO_START_STOP_ENTITY_IDS] = entity_ids
+    if new_data == entry.data:
+        await _remove_core_auto_start_stop_entities(hass, entry)
+        return False
+    if api:
+        api.skip_reload_on_config_update = True
+    try:
+        hass.config_entries.async_update_entry(entry, data=new_data)
+    finally:
+        if api:
+            api.skip_reload_on_config_update = False
+
+    if eligible:
+        _LOGGER.info(
+            "%s - auto-start/stop delegated to '%s': core feature disabled and marked as migrated (level '%s' and entity IDs kept for the plugin)",
+            entry.data.get(CONF_NAME),
+            AUTO_START_STOP_MIGRATED_BY_VTHERM_AUTO_START_STOP,
+            entry.data.get(CONF_AUTO_START_STOP_LEVEL, AUTO_START_STOP_LEVEL_NONE),
+        )
+    else:
+        _LOGGER.info("%s - recovered historical auto-start/stop entity IDs for the plugin", entry.data.get(CONF_NAME))
+    await _remove_core_auto_start_stop_entities(hass, entry)
+    return True
+
+
+async def async_migrate_auto_start_stop(hass: HomeAssistant) -> int:
+    """Mark every thermostat actually delegated to an external auto-start/stop manager.
+
+    Only thermostats with an attached external manager are migrated: a thermostat
+    the plugin does not cover keeps a working core feature instead of losing it.
+    A failure on one thermostat is logged and does not prevent the others.
+
+    Returns the number of migrated entries.
+    """
+    component = hass.data.get(CLIMATE_DOMAIN)
+    if component is None:
+        return 0
+
+    migrated = 0
+    for entity in list(component.entities):
+        try:
+            if not entity.device_info or entity.device_info.get("model") != DOMAIN:
+                continue
+            entry = entity.config_entry
+            if entry is None:
+                continue
+            if entity.get_feature_manager(CONF_AUTO_START_STOP_STABLE_NAME) is None:
+                continue
+            if await _migrate_auto_start_stop_entry(hass, entry):
+                migrated += 1
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.error(
+                "Error while migrating auto-start/stop for entity %s: %s",
+                getattr(entity, "entity_id", entity),
+                exc,
+            )
+    return migrated
+
 
 SELF_REGULATION_PARAM_SCHEMA = {
     vol.Required("kp"): vol.Coerce(float),
     vol.Required("ki"): vol.Coerce(float),
     vol.Required("k_ext"): vol.Coerce(float),
     vol.Required("offset_max"): vol.Coerce(float),
-    vol.Required("stabilization_threshold"): vol.Coerce(float),
     vol.Required("accumulated_error_threshold"): vol.Coerce(float),
+    "overheat_protection": vol.Coerce(bool),
 }
 
 EMA_PARAM_SCHEMA = {
@@ -106,6 +146,7 @@ CONFIG_SCHEMA = vol.Schema(
                 CONF_SHORT_EMA_PARAMS: vol.Schema(EMA_PARAM_SCHEMA),
                 CONF_SAFETY_MODE: vol.Schema(SAFETY_MODE_PARAM_SCHEMA),
                 vol.Optional(CONF_MAX_ON_PERCENT): vol.Coerce(float),
+                vol.Optional(CONF_LOG_BUFFER_MAX_AGE_HOURS, default=DEFAULT_MAX_AGE_HOURS): cv.positive_int,
             }
         ),
     },
@@ -113,9 +154,7 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup(
-    hass: HomeAssistant, config: ConfigType
-):  # pylint: disable=unused-argument
+async def async_setup(hass: HomeAssistant, config: ConfigType):  # pylint: disable=unused-argument
     """Initialisation de l'intégration"""
     _LOGGER.info(
         "Initializing %s integration with config: %s",
@@ -137,14 +176,17 @@ async def async_setup(
     else:
         _LOGGER.info("No global config from configuration.yaml available")
 
+    # The VTherms start now: the central boiler state is decided once they have all started (see init_vtherm_links)
+    api.central_boiler_manager.notify_vtherms_starting()
+
     # Listen HA starts to initialize all links between
     @callback
     async def _async_startup_internal(*_):
-        _LOGGER.info(
-            "VersatileThermostat - HA is started, initialize all links between VTherm entities"
-        )
+        _LOGGER.info("VersatileThermostat - HA is started, initialize all links between VTherm entities")
         await api.init_vtherm_links()
         await api.notify_central_mode_change()
+        # External managers are now attached: hand the decision over for good.
+        await async_migrate_auto_start_stop(hass)
 
     if hass.state == CoreState.running:
         await _async_startup_internal()
@@ -158,6 +200,19 @@ async def async_setup(
         _handle_reload,
     )
 
+    # Initialize log collector
+    # Note: Single shared instance stored in hass.data[DOMAIN] is used for all VTherm loggers.
+    # This ensures that all log records are centralized in one ring buffer, regardless of reload.
+    if "log_handler" not in hass.data[DOMAIN]:
+        max_age_hours = vtherm_config.get(CONF_LOG_BUFFER_MAX_AGE_HOURS, DEFAULT_MAX_AGE_HOURS) if vtherm_config is not None else DEFAULT_MAX_AGE_HOURS
+        log_handler = VThermLogHandler(max_age_hours=max_age_hours)
+        hass.data[DOMAIN]["log_handler"] = log_handler
+        _LOGGER.info("VTherm log collector initialized (buffer: %d h)", max_age_hours)
+
+        # Register the HTTP endpoint for log downloads
+        # This provides a /api/versatile_thermostat/logs/<filename> endpoint
+        await async_register_log_download_endpoint(hass)
+
     return True
 
 
@@ -167,22 +222,28 @@ async def reload_all_vtherm(hass):
 
     current_entries = hass.config_entries.async_entries(DOMAIN)
 
-    reload_tasks = [
-        hass.config_entries.async_reload(entry.entry_id) for entry in current_entries
-    ]
+    reload_tasks = [hass.config_entries.async_reload(entry.entry_id) for entry in current_entries]
 
-    await asyncio.gather(*reload_tasks)
-    api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api(hass)
-    if api:
-        await api.reload_central_boiler_entities_list()
+    # While the entries are reloaded, the central boiler sensors only see a part of the VTherms.
+    # init_vtherm_links notifies that the VTherms have started; the finally covers a failed reload.
+    # The API is read again after the reload: it is replaced if all the entries have been unloaded.
+    VersatileThermostatAPI.get_vtherm_api(hass).central_boiler_manager.notify_vtherms_starting()
+    try:
+        await asyncio.gather(*reload_tasks)
+        api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api(hass)
+        await api.central_boiler_manager.reload_central_boiler_entities_list()
         await api.init_vtherm_links()
+    finally:
+        await VersatileThermostatAPI.get_vtherm_api(hass).central_boiler_manager.notify_vtherms_started()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Versatile Thermostat from a config entry."""
 
+    name = entry.data.get(CONF_NAME)
     _LOGGER.debug(
-        "Calling async_setup_entry entry: entry_id='%s', value='%s'",
+        "%s - Calling async_setup_entry entry: entry_id='%s', value='%s'",
+        name,
         entry.entry_id,
         entry.data,
     )
@@ -210,13 +271,22 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
         entry.data,
     )
 
+    # If a component has set this flag, skip the reload (data is still persisted to disk).
+    api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api(hass)
+    if api and api.skip_reload_on_config_update:
+        _LOGGER.debug(
+            "update_listener: skipping reload for entry '%s' (skip_reload_on_config_update=True)",
+            entry.entry_id,
+        )
+        return
+
     if entry.data.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_CENTRAL_CONFIG:
         await reload_all_vtherm(hass)
     else:
         await hass.config_entries.async_reload(entry.entry_id)
         # Reload the central boiler list of entities
         api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api(hass)
-        if api is not None:
+        if api:
             await api.central_boiler_manager.reload_central_boiler_entities_list()
             await api.init_vtherm_links(entry.entry_id)
 
@@ -227,8 +297,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         if api:
+            if entry.data.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_CENTRAL_CONFIG:
+                api.reset_central_config()
+                api.central_boiler_manager.stop_listening()
             api.remove_entry(entry)
-            await api.reload_central_boiler_entities_list()
+            await api.central_boiler_manager.reload_central_boiler_entities_list()
 
     return unload_ok
 
@@ -236,80 +309,75 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # Example migration function
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Migrate old entry."""
-    _LOGGER.debug(
-        "Migrating from version %s/%s", config_entry.version, config_entry.minor_version
-    )
+    _LOGGER.debug("Migrating from version %s/%s", config_entry.version, config_entry.minor_version)
 
-    if (
-        config_entry.version != CONFIG_VERSION
-        or config_entry.minor_version != CONFIG_MINOR_VERSION
-    ):
-        _LOGGER.debug(
-            "Migration to %s/%s is needed", CONFIG_VERSION, CONFIG_MINOR_VERSION
-        )
+    def calculate_version(major, minor):
+        return major * 100 + minor
+
+    current_version = calculate_version(CONFIG_VERSION, CONFIG_MINOR_VERSION)
+    version = calculate_version(config_entry.version, config_entry.minor_version)
+
+    if version != current_version:
+        _LOGGER.debug("Migration to %s/%s is needed", CONFIG_VERSION, CONFIG_MINOR_VERSION)
         new = {**config_entry.data}
 
         thermostat_type = config_entry.data.get(CONF_THERMOSTAT_TYPE)
 
-        if thermostat_type == CONF_THERMOSTAT_CENTRAL_CONFIG:
-            new[CONF_USE_WINDOW_FEATURE] = True
-            new[CONF_USE_MOTION_FEATURE] = True
-            new[CONF_USE_POWER_FEATURE] = new.get(CONF_POWER_SENSOR, None) is not None
-            new[CONF_USE_PRESENCE_FEATURE] = (
-                new.get(CONF_PRESENCE_SENSOR, None) is not None
-            )
+        # Unit test with no version comes with 101 (version=1 and minor_version=1)
+        if version <= 200:
 
-            new[CONF_USE_CENTRAL_BOILER_FEATURE] = new.get(
-                "add_central_boiler_control", False
-            ) or new.get(CONF_USE_CENTRAL_BOILER_FEATURE, False)
+            # Migration of central config thermostat to add new features flags
+            if thermostat_type == CONF_THERMOSTAT_CENTRAL_CONFIG:
+                new[CONF_USE_WINDOW_FEATURE] = True
+                new[CONF_USE_MOTION_FEATURE] = True
+                new[CONF_USE_POWER_FEATURE] = new.get(CONF_POWER_SENSOR, None) is not None
+                new[CONF_USE_PRESENCE_FEATURE] = new.get(CONF_PRESENCE_SENSOR, None) is not None
 
-        if config_entry.data.get(CONF_UNDERLYING_LIST, None) is None:
-            underlying_list = []
-            if thermostat_type == CONF_THERMOSTAT_SWITCH:
-                underlying_list = [
-                    config_entry.data.get(CONF_HEATER, None),
-                    config_entry.data.get(CONF_HEATER_2, None),
-                    config_entry.data.get(CONF_HEATER_3, None),
-                    config_entry.data.get(CONF_HEATER_4, None),
-                ]
-            elif thermostat_type == CONF_THERMOSTAT_CLIMATE:
-                underlying_list = [
-                    config_entry.data.get(CONF_CLIMATE, None),
-                    config_entry.data.get(CONF_CLIMATE_2, None),
-                    config_entry.data.get(CONF_CLIMATE_3, None),
-                    config_entry.data.get(CONF_CLIMATE_4, None),
-                ]
-            elif thermostat_type == CONF_THERMOSTAT_VALVE:
-                underlying_list = [
-                    config_entry.data.get(CONF_VALVE, None),
-                    config_entry.data.get(CONF_VALVE_2, None),
-                    config_entry.data.get(CONF_VALVE_3, None),
-                    config_entry.data.get(CONF_VALVE_4, None),
-                ]
+                new[CONF_USE_CENTRAL_BOILER_FEATURE] = new.get("add_central_boiler_control", False) or new.get(CONF_USE_CENTRAL_BOILER_FEATURE, False)
 
-            new[CONF_UNDERLYING_LIST] = [
-                entity for entity in underlying_list if entity is not None
-            ]
+            if config_entry.data.get(CONF_UNDERLYING_LIST, None) is None:
+                underlying_list = []
+                if thermostat_type == CONF_THERMOSTAT_SWITCH:
+                    underlying_list = [
+                        config_entry.data.get(CONF_HEATER, None),
+                        config_entry.data.get(CONF_HEATER_2, None),
+                        config_entry.data.get(CONF_HEATER_3, None),
+                        config_entry.data.get(CONF_HEATER_4, None),
+                    ]
+                elif thermostat_type == CONF_THERMOSTAT_CLIMATE:
+                    underlying_list = [
+                        config_entry.data.get(CONF_CLIMATE, None),
+                        config_entry.data.get(CONF_CLIMATE_2, None),
+                        config_entry.data.get(CONF_CLIMATE_3, None),
+                        config_entry.data.get(CONF_CLIMATE_4, None),
+                    ]
+                elif thermostat_type == CONF_THERMOSTAT_VALVE:
+                    underlying_list = [
+                        config_entry.data.get(CONF_VALVE, None),
+                        config_entry.data.get(CONF_VALVE_2, None),
+                        config_entry.data.get(CONF_VALVE_3, None),
+                        config_entry.data.get(CONF_VALVE_4, None),
+                    ]
 
-            for key in [
-                CONF_HEATER,
-                CONF_HEATER_2,
-                CONF_HEATER_3,
-                CONF_HEATER_4,
-                CONF_CLIMATE,
-                CONF_CLIMATE_2,
-                CONF_CLIMATE_3,
-                CONF_CLIMATE_4,
-                CONF_VALVE,
-                CONF_VALVE_2,
-                CONF_VALVE_3,
-                CONF_VALVE_4,
-            ]:
-                new.pop(key, None)
+                new[CONF_UNDERLYING_LIST] = [entity for entity in underlying_list if entity is not None]
+
+                for key in [
+                    CONF_HEATER,
+                    CONF_HEATER_2,
+                    CONF_HEATER_3,
+                    CONF_HEATER_4,
+                    CONF_CLIMATE,
+                    CONF_CLIMATE_2,
+                    CONF_CLIMATE_3,
+                    CONF_CLIMATE_4,
+                    CONF_VALVE,
+                    CONF_VALVE_2,
+                    CONF_VALVE_3,
+                    CONF_VALVE_4,
+                ]:
+                    new.pop(key, None)
 
             # Migration 2.0 to 2.1 -> rename security parameters into safety
-
-        if config_entry.version == CONFIG_VERSION and config_entry.minor_version == 0:
             for key in [
                 "security_delay_min",
                 "security_min_on_percent",
@@ -321,14 +389,139 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry):
                     new[new_key] = old_value
                 new.pop(key, None)
 
+        # Version 201 (add auto TPI parameters). Cumul with previous migration if needed
+        if version <= 201:
+            # Migration 2.1 to 2.2 -> add auto TPI parameters with default values
+            new[CONF_AUTO_TPI_MODE] = False
+            new[CONF_AUTO_TPI_CALCULATION_METHOD] = AUTO_TPI_METHOD_AVG
+            new[CONF_AUTO_TPI_EMA_ALPHA] = 0.15
+            new[CONF_AUTO_TPI_AVG_INITIAL_WEIGHT] = 1
+            new[CONF_AUTO_TPI_EMA_DECAY_RATE] = 0.08
+            new[CONF_AUTO_TPI_HEATER_HEATING_TIME] = 5
+            new[CONF_AUTO_TPI_HEATER_COOLING_TIME] = 5
+            new[CONF_AUTO_TPI_HEATING_POWER] = 1.0
+            new[CONF_AUTO_TPI_COOLING_POWER] = 1.0
+
+            # migrate CONF_OFFSET_CALIBRATION_LIST if present into CONF_SYNC_DEVICE_INTERNAL_TEMP_LIST
+            offset_calib_list = config_entry.data.get(CONF_OFFSET_CALIBRATION_LIST, None)
+            if offset_calib_list is not None and len(offset_calib_list) > 0:
+                sync_device_internal_temp_list = []
+                for offset in offset_calib_list:
+                    if offset is not None:
+                        sync_device_internal_temp_list.append(offset)
+                new[CONF_SYNC_ENTITY_LIST] = sync_device_internal_temp_list
+                new.pop(CONF_OFFSET_CALIBRATION_LIST, None)
+                new[CONF_SYNC_WITH_CALIBRATION] = True
+                new[CONF_SYNC_DEVICE_INTERNAL_TEMP] = True
+            else:
+                new[CONF_SYNC_WITH_CALIBRATION] = False
+                new[CONF_SYNC_DEVICE_INTERNAL_TEMP] = False
+
+        if version <= 202:
+            _LOGGER.info("Cleaning up obsolete Auto TPI keys")
+            new.pop("auto_tpi_max_coef_int", None)
+            new.pop("auto_tpi_enable_update_config", None)
+            new.pop("auto_tpi_enable_notification", None)
+            new.pop("auto_tpi_keep_ext_learning", None)
+            new.pop("auto_tpi_continuous_learning", None)
+
+        if version <= 203:
+            # Freeze the power unit to preserve the unit previously displayed by the sensors.
+            # Only set it when absent to respect an already configured value.
+            if CONF_POWER_UNIT not in new:
+                if thermostat_type == CONF_THERMOSTAT_CENTRAL_CONFIG:
+                    new[CONF_POWER_UNIT] = POWER_UNIT_AUTO
+                else:
+                    device_power = get_safe_float_value(new.get(CONF_DEVICE_POWER))
+                    # Reproduce the historical THRESHOLD_WATT_KILO heuristic
+                    new[CONF_POWER_UNIT] = POWER_UNIT_WATT if device_power is not None and device_power > THRESHOLD_POWER_WATT_KILO else POWER_UNIT_KILO_WATT
+
         # Update the config entry with migrated data
-        hass.config_entries.async_update_entry(
-            config_entry,
-            data=new,
-            version=CONFIG_VERSION,
-            minor_version=CONFIG_MINOR_VERSION
-        )
+        hass.config_entries.async_update_entry(config_entry, data=new, version=CONFIG_VERSION, minor_version=CONFIG_MINOR_VERSION)
 
         _LOGGER.info("Migration to version %s.%s successful", CONFIG_VERSION, CONFIG_MINOR_VERSION)
+    else:
+        _LOGGER.info("No migration needed")
 
     return True
+
+
+# Unique-id suffixes of the entities the core creates for the feature.
+_AUTO_START_STOP_ENTITY_SUFFIXES = {
+    "switch": "_enable_auto_start_stop",
+    "select": "_auto_start_stop_stop_mode",
+}
+
+
+def _is_core_auto_start_stop_entity(entity: RegistryEntry | DeletedRegistryEntry, entry_id: str) -> bool:
+    """Match only this thermostat's core-created feature entities."""
+    suffix = _AUTO_START_STOP_ENTITY_SUFFIXES.get(entity.domain)
+    return (
+        entity.config_entry_id == entry_id
+        and entity.platform == DOMAIN
+        and suffix is not None
+        and entity.unique_id.endswith(suffix)
+    )
+
+
+def _core_auto_start_stop_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, str]:
+    """Remember exact IDs, preferring saved values and current registry rows."""
+    stored = entry.data.get(CONF_AUTO_START_STOP_ENTITY_IDS, {})
+    if not isinstance(stored, Mapping):
+        raise ValueError(f"{CONF_AUTO_START_STOP_ENTITY_IDS} must be a mapping")
+    result: dict[str, str] = {}
+    for domain, entity_id in stored.items():
+        if domain not in _AUTO_START_STOP_ENTITY_SUFFIXES or not isinstance(entity_id, str) or not entity_id.startswith(f"{domain}."):
+            raise ValueError(f"Invalid historical auto-start/stop entity identity: {domain}={entity_id}")
+        result[domain] = entity_id
+    registry = async_get_entity_registry(hass)
+    for entity in chain(registry.entities.values(), registry.deleted_entities.values()):
+        if _is_core_auto_start_stop_entity(entity, entry.entry_id):
+            result.setdefault(entity.domain, entity.entity_id)
+    return result
+
+
+@callback
+def _live_entity(hass: HomeAssistant, domain: str, entity_id: str):
+    """Return a live entity of a domain, or ``None`` when the domain is not loaded."""
+    component = hass.data.get(domain)
+    getter = getattr(component, "get_entity", None)
+    return getter(entity_id) if getter is not None else None
+
+
+async def _remove_core_auto_start_stop_entities(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Remove the core auto-start/stop entities of one entry from the registry.
+
+    The match uses the config entry id plus the unique-id suffix, so a renamed
+    thermostat is still cleaned up. Removing a row that does not exist is a
+    no-op, which keeps the call harmless for an entry that never created any.
+
+    A still attached entity is detached first: removing its registry row while it
+    is alive leaves it with a stale ``registry_entry``, and the next
+    ``async_write_ha_state`` then updates a row that no longer exists and raises
+    ``KeyError``. Detaching first sets the platform state to removed and
+    unsubscribes the entity from registry events, exactly like an unload does.
+
+    Returns the number of removed entities.
+    """
+    registry = async_get_entity_registry(hass)
+    removed = 0
+    for entity_entry in list(registry.entities.values()):
+        if not _is_core_auto_start_stop_entity(entity_entry, entry.entry_id):
+            continue
+
+        entity = _live_entity(hass, entity_entry.domain, entity_entry.entity_id)
+        if entity is not None:
+            # force_remove drops the state instead of leaving it orphaned as
+            # unavailable, since the entity is not coming back.
+            await entity.async_remove(force_remove=True)
+        registry.async_remove(entity_entry.entity_id)
+        removed += 1
+
+    if removed:
+        _LOGGER.info(
+            "%s - removed %d orphaned auto-start/stop entity(ies) from the registry",
+            entry.data.get(CONF_NAME),
+            removed,
+        )
+    return removed

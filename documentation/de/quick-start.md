@@ -1,100 +1,47 @@
 # Schnellstart
 
-Auf dieser Seite werden die Schritte zur schnellen Einrichtung eines einfachen, aber betriebsbereiten _VTherm_ beschrieben. Gegliedert nach Gerätetypen.
+Diese Seite fasst die Schritte zusammen, um ein funktionierendes _VTherm_ zu erhalten, unabhängig vom gesteuerten Gerät. Jeder Schritt verweist auf die Seite, die ihn ausführlich beschreibt. Eine Anleitung nach Heizungsart (Thermostatventil, Wärmepumpe, Steuerleitung, Pelletofen) finden Sie in den [Schnellstart-Anleitungen der Website](https://www.versatile-thermostat.org/de/quick-start/). Die gerätespezifischen Einstellungen stehen auf der Seite des Geräts im [Gerätekatalog](https://www.versatile-thermostat.org/de/devices/).
 
 - [Schnellstart](#schnellstart)
-  - [Nodon SIN-4-FP-21 oder ähnlich (Pilotdraht)](#nodon-sin-4-fp-21-oder-ähnlich-pilotdraht)
-  - [Heatzy, eCosy, oder ähnlich (`climate`-Entity)](#heatzy-ecosy-oder-ähnlich-climate-entity)
-  - [Einfache Schalter wie Aqara T1, Nous B2Z, Sonoff ZBMini, Sonoff POW, ...](#einfache-schalter-wie-aqara-t1-nous-b2z-sonoff-zbmini-sonoff-pow-)
-  - [Sonoff TRVZB oder ähnlich (TRV mit Ventilsteuerung)](#sonoff-trvzb-oder-ähnlich-trv-mit-ventilsteuerung)
-  - [Reversible Wärmepumpen, Klimaanlagen oder Geräte, die über eine `climate`-Entity gesteuert werden](#reversible-wärmepumpen-klimaanlagen-oder-geräte-die-über-eine-climate-entity-gesteuert-werden)
-- [Nächste Schritte](#nächste-schritte)
-- [Aufruf zu Beiträgen](#aufruf-zu-beiträgen)
+  - [Bevor Sie beginnen](#bevor-sie-beginnen)
+  - [Das VTherm erstellen](#das-vtherm-erstellen)
+  - [Einstellen und prüfen](#einstellen-und-prüfen)
+  - [Nächster Schritt](#nächster-schritt)
 
-## Nodon SIN-4-FP-21 oder ähnlich (Pilotdraht)
+## Bevor Sie beginnen
 
-Dieses Modul ermöglicht die Steuerung eines Heizkörpers über einen Pilotdraht. Es erscheint in _HA_ als eine `select`-Einheit, mit der Sie die anzuwendende Heizungsvoreinstellung auswählen können.
+- Versatile Thermostat ist installiert (siehe [Installation](installation.md)).
+- Das zu steuernde Gerät ist in Home Assistant verfügbar, ebenso ein Raumtemperatursensor und ein Außentemperatursensor.
+- Sie wissen, welche Entity das Gerät bereitstellt (`climate`, `number`, `switch` oder `select`): Sie bestimmt den _VTherm_-Typ (siehe [Wähle das Richtige aus](creation.md#wähle-das-richtige-aus)).
 
-Das _VTherm_ regelt die Temperatur, indem es die Voreinstellung über benutzerdefinierte Befehle periodisch ändert, bis der Sollwert erreicht ist.
+## Das VTherm erstellen
 
-Damit dies funktioniert, muss die für die Heizungssteuerung verwendete Voreinstellung höher sein als die von Ihnen benötigte Höchsttemperatur (24°C ist ein guter Wert).
+1. **Fügen Sie die Integration** Versatile Thermostat über die Seite der Integrationen hinzu und wählen Sie den zum Gerät passenden _VTherm_-Typ (siehe [Wahl eines VTherm](creation.md)). Die zentrale Konfiguration ist optional: Ohne sie lassen Sie die Kästchen „Zentrale Konfiguration verwenden“ deaktiviert.
+2. **Wichtigste Eigenschaften**: Geben Sie dem _VTherm_ einen Namen und wählen Sie den Raumtemperatursensor, dann den Außentemperatursensor. Behalten Sie die Standard-Zyklusdauer bei (siehe [Auswahl der grundlegenden Attribute](base-attributes.md)).
+3. **Funktionen**: Aktivieren Sie vorerst keine. Sie fügen sie hinzu, sobald das _VTherm_ funktioniert.
+4. **Basiswerte**: Wählen Sie die Entity des Geräts. Die Einstellungen hängen vom Typ ab:
+   - [`over_climate`](over-climate.md): Ist die Ventilöffnung eines TRV steuerbar, wählen Sie die [direkte Ventilsteuerung](self-regulation.md#selbstregulierung-bei-direkter-ventilkontrolle). Andernfalls lassen Sie die Selbstregulierung zunächst deaktiviert.
+   - [`over_valve`](over-valve.md): Wählen Sie die `number`-Entity des Ventils.
+   - [`over_switch`](over-switch.md): Ein `switch` genügt. Für ein Steuerleitungsmodul (`select`) oder eine `climate`-Entity geben Sie die [angepassten Befehle](over-switch.md#befehlsanpassung) ein.
 
-Für die Integration in _VTherm_, müssen Sie:
-1. Erstelle ein _VTherm_ vom Typ `over_switch`. Siehe [Erstellen eines _VTherm_](creation.md),
-2. Weisen Sie ihm die Hauptattribute zu (mindestens Name, Raumtemperaturfühler und Außentemperaturfühler). Siehe [Hauptattribute](base-attributes.md),
-3. Weisen Sie ein oder mehrere zugehörige Geräte der Steuerung zu. Das zugehörige Gerät ist hier die `select`-Entität, die den Nodon steuert. Siehe [zugehörige Geräte](over-switch.md),
-4. Stellen Sie benutzerdefinierte Ein/Aus-Befehle bereit (erforderlich für den Nodon). Siehe [Befehlsanpassung](over-switch.md#command-customization). Die benutzerdefinierten Befehle folgen dem Format `select_option/option:<preset>`, wie im Link angegeben.
+   Die gerätespezifischen Einstellungen (zu verwendende Entities, Befehle, bekannte Fallstricke) stehen auf der Seite des Geräts im [Gerätekatalog](https://www.versatile-thermostat.org/de/devices/).
+5. **TPI-Parameter**, wenn dieses Menü angeboten wird: Behalten Sie die Standardwerte bei (siehe [die TPI-Koeffizienten](algorithms.md#konfigurieren-der-tpi-algorithmusfaktoren)).
+6. **Temperaturvoreinstellungen**: Bestätigen Sie das Menü (siehe [Voreinstellungen](feature-presets.md)).
+7. **Erweiterte Einstellungen**: Behalten Sie die Standardwerte des Sicherheitsmodus bei (siehe [Sicherheitsparameter](feature-advanced.md#sicherheitsparameter)).
+8. **Alles erledigt**: Das _VTherm_ ist erstellt.
 
-Nach diesen vier Schritten haben Sie eine voll funktionsfähige _VTherm_, die Ihr Nodon oder ein ähnliches Gerät steuert.
+## Einstellen und prüfen
 
-## Heatzy, eCosy, oder ähnlich (`climate`-Entity)
+1. Stellen Sie die Temperatur jeder Voreinstellung über die Entities des _VTherm_ ein (siehe [Voreinstellungen](feature-presets.md)).
+2. Schalten Sie das _VTherm_ in den Heizmodus und wählen Sie die Voreinstellung Komfort, mit einem Sollwert über der Raumtemperatur.
+3. Prüfen Sie, ob das Gerät reagiert: Das Ventil öffnet sich, das Gerät erhält den Sollwert oder der Heizkörper schaltet sich ein.
 
-Dieses Modul ermöglicht die Steuerung eines Heizkörpers, der in _HA_ als `climate`-Entity erscheint, und ermöglicht die Wahl der Heizungsvoreinstellung oder des Modus (Heizen / Kühlen / Aus).
+Wenn nichts passiert, lesen Sie die [Störungsbeseitigung](troubleshooting.md), [laden Sie dann die Protokolle herunter](feature-logs-collector.md) und öffnen Sie sie im [Log-Analyser](https://www.versatile-thermostat.org/de/debugger/) der Website.
 
-Das _VTherm_ regelt die Temperatur, indem es das Gerät über benutzerdefinierte Befehle in regelmäßigen Abständen ein- und ausschaltet, bis der Sollwert erreicht ist.
+## Nächster Schritt
 
-Für die Integration in _VTherm_, müssen Sie:
-1. Erstelle ein _VTherm_ vom Typ `over_switch`. Siehe [Erstellen eines _VTherm_](creation.md),
-2. Weisen Sie ihm die Hauptattribute zu (mindestens Name, Raumtemperaturfühler und Außentemperaturfühler). Siehe [Hauptattribute](base-attributes.md),
-3. Weisen Sie ein oder mehrere zugehörige Geräte der Steuerung zu. Das zugehörige Gerät ist hier die `climate`-Entity die die Heatzy oder eCosy steuert. Siehe [zugehörige Geräte](over-switch.md),
-4. Stellen Sie benutzerdefinierte Ein/Aus-Befehle bereit (erforderlich). Siehe [Befehlsanpassung](over-switch.md#command-customization). Die benutzerdefinierten Befehle haben das Format `set_hvac_mode/hvac_mode:<mode>` oder `set_preset_mode/preset_mode:<preset>`, wie im Link angegeben.
+Sobald dieses Basis-_VTherm_ funktioniert:
 
-Nach diesen vier Schritten haben Sie eine voll funktionsfähige _VTherm_, die Ihr Heatzy, eCosy, oder ähnliches Gerät steuert.
-
-## Einfache Schalter wie Aqara T1, Nous B2Z, Sonoff ZBMini, Sonoff POW, ...
-
-Dieses Modul ermöglicht die Steuerung eines Heizkörpers über einen einfachen Schalter. Es erscheint in _HA_ als `switch`-Entität, die den Heizkörper direkt ein- oder ausschaltet.
-
-Das _VTherm_ regelt die Temperatur durch periodisches Ein- und Ausschalten des Schalters, bis der Sollwert erreicht ist.
-
-Für die Integration in _VTherm_, müssen Sie:
-1. Erstelle ein _VTherm_ vom Typ `over_switch`. Siehe [Erstellen eines _VTherm_](creation.md),
-2. Weisen Sie ihm die Hauptattribute zu (mindestens Name, Raumtemperaturfühler und Außentemperaturfühler). Siehe [Hauptattribute](base-attributes.md),
-3. Weisen Sie ein oder mehrere zugehörige Geräte der Steuerung zu. Das zugehörige Gerät ist hier die `switch`-Entity die den Schalter steuert. Siehe [Zugehörige Geräte](over-switch.md).
-
-Nach Abschluss dieser drei Schritte haben Sie ein voll funktionsfähiges _VTherm_, das Ihren `Schalter` oder ein ähnliches Gerät steuert.
-
-## Sonoff TRVZB oder ähnlich (TRV mit Ventilsteuerung)
-
-Diese Art von _TRV_-Gerät steuert die Öffnung eines Ventils, das mehr oder weniger heißes Wasser aus einem Heizkessel oder einer Wärmepumpe fließen lässt. Es erscheint in _HA_ als eine `climate`-Entity zusammen mit einer `number`-Entitäten die das Ventil steuern. Diese `number`-Entitäten können versteckt sein und müssen in einigen Fällen explizit hinzugefügt werden.
-
-_VTherm_ passt den Öffnungsgrad des Ventils an, bis die Solltemperatur erreicht ist.
-
-Für die Integration in _VTherm_, müssen Sie:
-1. Erstelle ein _VTherm_ vom Typ `over_climate`. Siehe [Erstellen eines _VTherm_](creation.md),
-2. Weisen Sie ihm die Hauptattribute zu (mindestens Name, Raumtemperaturfühler und Außentemperaturfühler). Siehe [Hauptattribute](base-attributes.md),
-3. Weisen Sie ein oder mehrere zugehörige Geräte der Steuerung zu. Das zugehörige Gerät ist hier die `climate`-Entity die das TRV steuert. [Zugehörige Geräte](over-climate.md),
-4. Geben Sie als Regelungsart nur `Direkte Ventilsteuerung` an. Nicht die Option `Zugehörige Temperatur kompensieren` auswählen. Siehe [Autoregulierung](over-climate.md#auto-regulation),
-5. Geben Sie die Entitäten mit den Namen `Öffnungsgrad`, `Schließgrad` und `Kalibrierungsoffset` an. Siehe [Zugehörige Geräte](over-switch.md).
-
-Damit dies funktioniert, muss der `Schließungsgrad` auf den Höchstwert (100 %) eingestellt sein. Aktivieren Sie die Option `Unterliegende Temperaturänderung folgen` erst, wenn Sie sich vergewissert haben, dass diese Grundkonfiguration ordnungsgemäß funktioniert.
-
-Nach Abschluss dieser fünf Schritte haben Sie über ein voll funktionsfähiges _VTherm_, das Ihr Sonoff TRVZB oder ein ähnliches Gerät steuert.
-
-## Reversible Wärmepumpen, Klimaanlagen oder Geräte, die über eine `climate`-Entity gesteuert werden
-
-Reversible Wärmepumpen (heat pumps/HP) oder ähnliche Geräte werden in _HA_ als `climate`“-Entity dargestellt, so dass Sie die Heizungsvoreinstellung oder den Modus (Heizen / Kühlen / Aus) auswählen können).
-
-_VTherm_ regelt die Temperatur, indem es die Zieltemperatur und den Modus des Geräts durch Befehle steuert, die an die zugehörige `climate`-Entity gesendet werden.
-
-Für die Integration in _VTherm_, müssen Sie:
-1. Erstelle ein _VTherm_ vom Typ `over_climate`. Siehe [Erstellen eines _VTherm_](creation.md),
-2. Weisen Sie ihm die Hauptattribute zu (mindestens Name, Raumtemperaturfühler und Außentemperaturfühler). Siehe [Hauptattribute](base-attributes.md),
-3. Weisen Sie ein oder mehrere zugehörige Geräte der Steuerung zu. Das zugehörige Gerät ist hier die `climate`-Entity  die die Wärmepumpe oder Klimaanlage steuert. Siehe [Zugehörige Geräte](over-climate.md),
-
-Nach diesen drei Schritten haben Sie ein voll funktionsfähiges _VTherm_ zur Steuerung Ihrer Wärmepumpe, Klimaanlage oder eines ähnlichen Gerätes.
-
-Um noch weiter zu gehen, kann eine Selbstregulierung erforderlich sein, je nachdem, wie gut Ihr Gerät funktioniert. Bei der Selbstregulierung passt _VTherm_ die Solltemperatur geringfügig an, um das Gerät zu veranlassen, mehr oder weniger zu heizen oder zu kühlen, bis der gewünschte Sollwert erreicht ist. Die Selbstregulierung wird hier im Detail erklärt: [Selbstregulierung](self-regulation.md).
-
-# Nächste Schritte
-
-Nach der Erstellung müssen Sie die voreingestellten Temperaturen konfigurieren. Siehe [Voreinstellungen](feature-presets.md) für eine minimale Konfiguration.
-Sie können auch (optional, aber empfohlen) die spezielle UI-Karte für Ihre Dashboards installieren. (Siehe [VTHerm UI Card](https://github.com/jmcollin78/versatile-thermostat-ui-card))
-
-Sobald diese minimale Einrichtung funktioniert - und nur dann, wenn sie korrekt funktioniert - können Sie zusätzliche Funktionen hinzufügen, wie z. B. die Anwesenheitserkennung, um zu verhindern, dass geheizt wird, wenn keine Person anwesend ist. Fügen Sie diese nach und nach hinzu und überprüfen Sie, ob _VTherm_ bei jedem Schritt korrekt reagiert, bevor Sie mit dem nächsten fortfahren.
-
-Sie können dann zentrale Konfigurationen einrichten, um Einstellungen für alle _VTherm_-Instanzen gemeinsam zu nutzen. Den Zentralmodus für die einheitliche Steuerung aller _VTherms_ aktivieren ([zentrale Konfiguration](feature-central-mode.md)) oder eine zentrale Kesselsteuerung integrieren ([Zentralheizung](feature-central-boiler.md)). Diese Liste ist nicht vollständig - eine vollständige Liste der _VTherm_-Funktionen finden Sie im Inhaltsverzeichnis.
-
-# Aufruf zu Beiträgen
-
-Diese Seite ist offen für Beiträge. Fühlen Sie sich frei, zusätzliche Ausrüstung und minimale Konfigurationseinstellungen vorzuschlagen.
+- Installieren Sie die UI-Karte und einen Zeitplaner, vorgestellt in [Einige unverzichtbare Ergänzungen](additions.md).
+- Aktivieren Sie die nützlichen [Funktionen](base-attributes.md#auswahl-der-zu-verwendenden-eigenschaften) nacheinander und prüfen Sie jedes Mal, ob das _VTherm_ richtig reagiert: [Erkennung offener Fenster](feature-window.md), [Anwesenheitsverwaltung](feature-presence.md), [Steuerung der Zentralheizung](feature-central-boiler.md)...
+- Danach bei Bedarf: [zentrale Konfiguration](creation.md#zentrale-konfiguration), [zentralisierte Steuerung](feature-central-mode.md), [Ventilkalibrierung](feature-recalibrate-valves.md), [Einstellung der Selbstregulierung](self-regulation.md) und [Tuning-Beispiele](tuning-examples.md).

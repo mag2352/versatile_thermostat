@@ -4,22 +4,17 @@
 from unittest.mock import patch  # , call
 
 # from datetime import datetime  # , timedelta
-from homeassistant import data_entry_flow
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.core import HomeAssistant
 
 from homeassistant.config_entries import SOURCE_USER
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.versatile_thermostat.thermostat_switch import (
     ThermostatOverSwitch,
 )
 
-from custom_components.versatile_thermostat.thermostat_climate import (
-    ThermostatOverClimate,
-)
-
-from custom_components.versatile_thermostat.vtherm_api import VersatileThermostatAPI
+from custom_components.versatile_thermostat.vtherm_central_api import VersatileThermostatAPI
 
 from .commons import *  # pylint: disable=wildcard-import, unused-wildcard-import
 from .const import *  # pylint: disable=wildcard-import, unused-wildcard-import
@@ -102,9 +97,7 @@ async def test_add_a_central_config(hass: HomeAssistant, skip_hass_states_is_sta
 
 # @pytest.mark.parametrize("expected_lingering_tasks", [True])
 @pytest.mark.parametrize("expected_lingering_timers", [True])
-async def test_minimal_over_switch_wo_central_config(
-    hass: HomeAssistant, skip_hass_states_is_state, init_vtherm_api
-):
+async def test_minimal_over_switch_wo_central_config(hass: HomeAssistant, skip_hass_states_is_state, init_vtherm_api, fake_underlying_switch: MockSwitch):
     """Tests that a VTherm without any central_configuration is working with its own attributes"""
     # Add a Switch VTherm
     entry = MockConfigEntry(
@@ -172,7 +165,7 @@ async def test_minimal_over_switch_wo_central_config(
         assert entity.proportional_algorithm is not None
         assert entity.proportional_algorithm._tpi_coef_int == 0.3
         assert entity.proportional_algorithm._tpi_coef_ext == 0.01
-        assert entity.proportional_algorithm._minimal_activation_delay == 30
+        assert entity._minimal_activation_delay == 30
         assert entity.safety_manager.safety_delay_min == 5
         assert entity.safety_manager.safety_min_on_percent == 0.3
         assert entity.safety_manager.safety_default_on_percent == 0.1
@@ -183,9 +176,7 @@ async def test_minimal_over_switch_wo_central_config(
 
 @pytest.mark.parametrize("expected_lingering_tasks", [True])
 @pytest.mark.parametrize("expected_lingering_timers", [True])
-async def test_full_over_switch_wo_central_config(
-    hass: HomeAssistant, skip_hass_states_is_state, init_vtherm_api
-):
+async def test_full_over_switch_wo_central_config(hass: HomeAssistant, skip_hass_states_is_state, init_vtherm_api, fake_underlying_switch: MockSwitch):
     """Tests that a VTherm without any central_configuration is working with its own attributes"""
 
     temps = {
@@ -275,7 +266,7 @@ async def test_full_over_switch_wo_central_config(
         assert entity.proportional_algorithm is not None
         assert entity.proportional_algorithm._tpi_coef_int == 0.3
         assert entity.proportional_algorithm._tpi_coef_ext == 0.01
-        assert entity.proportional_algorithm._minimal_activation_delay == 30
+        assert entity._minimal_activation_delay == 30
         assert entity.safety_manager.safety_delay_min == 5
         assert entity.safety_manager.safety_min_on_percent == 0.3
         assert entity.safety_manager.safety_default_on_percent == 0.1
@@ -321,10 +312,15 @@ async def test_full_over_switch_wo_central_config(
 
 @pytest.mark.parametrize("expected_lingering_tasks", [True])
 @pytest.mark.parametrize("expected_lingering_timers", [True])
-async def test_full_over_switch_with_central_config(
-    hass: HomeAssistant, skip_hass_states_is_state, init_central_power_manager
-):
+async def test_full_over_switch_with_central_config(hass: HomeAssistant, skip_hass_states_is_state, init_central_power_manager, fake_underlying_switch: MockSwitch):
     """Tests that a VTherm with central_configuration is working with the central_config attributes"""
+
+    central_config = VersatileThermostatAPI.get_vtherm_api().find_central_configuration()
+    hass.config_entries.async_update_entry(
+        central_config,
+        data={**central_config.data, CONF_POWER_UNIT: POWER_UNIT_AUTO},
+    )
+
     # Add a Switch VTherm
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -336,6 +332,8 @@ async def test_full_over_switch_with_central_config(
             CONF_TEMP_SENSOR: "sensor.mock_temp_sensor",
             CONF_EXTERNAL_TEMP_SENSOR: "sensor.mock_ext_temp_sensor",
             CONF_CYCLE_MIN: 5,
+            CONF_DEVICE_POWER: 100,
+            CONF_POWER_UNIT: POWER_UNIT_WATT,
             CONF_TEMP_MIN: 8,
             CONF_TEMP_MAX: 18,
             CONF_STEP_TEMPERATURE: 0.3,
@@ -401,7 +399,8 @@ async def test_full_over_switch_with_central_config(
         assert entity.proportional_algorithm is not None
         assert entity.proportional_algorithm._tpi_coef_int == 0.5
         assert entity.proportional_algorithm._tpi_coef_ext == 0.02
-        assert entity.proportional_algorithm._minimal_activation_delay == 11
+        assert entity.power_manager.power_unit == to_legal_power_unit(POWER_UNIT_WATT)
+        assert entity._minimal_activation_delay == 11
         assert entity.safety_manager.safety_delay_min == 61
         assert entity.safety_manager.safety_min_on_percent == 0.5
         assert entity.safety_manager.safety_default_on_percent == 0.2
@@ -489,62 +488,3 @@ async def test_over_switch_with_central_config_but_no_central_config(
     # in case of error we stays in main
     assert result["step_id"] == "main"
     assert result["errors"] == {"use_main_central_config": "no_central_config"}
-
-
-async def test_migration_of_central_config(
-    hass: HomeAssistant,
-    skip_hass_states_is_state,
-):
-    """Tests the clean_central_config_doubon of base_thermostat"""
-    central_config_entry = MockConfigEntry(
-        version=CONFIG_VERSION,
-        # An old minor version
-        minor_version=0,
-        domain=DOMAIN,
-        title="TheCentralConfigMockName",
-        unique_id="centralConfigUniqueId",
-        data={
-            CONF_NAME: CENTRAL_CONFIG_NAME,
-            CONF_THERMOSTAT_TYPE: CONF_THERMOSTAT_CENTRAL_CONFIG,
-            CONF_EXTERNAL_TEMP_SENSOR: "sensor.mock_ext_temp_sensor",
-            CONF_TEMP_MIN: 15,
-            CONF_TEMP_MAX: 30,
-            CONF_STEP_TEMPERATURE: 0.1,
-            CONF_TPI_COEF_INT: 0.5,
-            CONF_TPI_COEF_EXT: 0.02,
-            CONF_MINIMAL_ACTIVATION_DELAY: 11,
-            CONF_MINIMAL_DEACTIVATION_DELAY: 0,
-            CONF_SAFETY_DELAY_MIN: 61,
-            CONF_SAFETY_MIN_ON_PERCENT: 0.5,
-            CONF_SAFETY_DEFAULT_ON_PERCENT: 0.2,
-            # The old central_boiler parameter
-            "add_central_boiler_control": True,
-            CONF_CENTRAL_BOILER_ACTIVATION_SRV: "switch.pompe_chaudiere/switch.turn_on",
-            CONF_CENTRAL_BOILER_DEACTIVATION_SRV: "switch.pompe_chaudiere/switch.turn_off",
-            CONF_CENTRAL_BOILER_ACTIVATION_DELAY_SEC: 10,
-        },
-    )
-
-    central_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(central_config_entry.entry_id)
-    assert central_config_entry.state is ConfigEntryState.LOADED
-
-    entity: ThermostatOverClimate = search_entity(
-        hass, "climate.thecentralconfigmockname", "climate"
-    )
-
-    assert entity is None
-
-    assert count_entities(hass, "climate.thecentralconfigmockname", "climate") == 0
-
-    # Test that VTherm API find the CentralConfig
-    api = VersatileThermostatAPI.get_vtherm_api(hass)
-    central_configuration = api.find_central_configuration()
-    assert central_configuration is not None
-
-    assert central_config_entry.data.get(CONF_USE_CENTRAL_BOILER_FEATURE) is True
-
-    # Test that VTherm API have any central boiler entities
-    # It should have been migrated and initialized
-    assert api.central_boiler_manager.nb_active_device_for_boiler == 0
-    assert api.central_boiler_manager.nb_active_device_for_boiler_threshold == 0  # the default value is 0

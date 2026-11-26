@@ -6,15 +6,16 @@
     - [auto-régulation par contrôle direct de la vanne](#auto-régulation-par-contrôle-direct-de-la-vanne)
       - [Comment régler correctement les paramètres qui contrôlent l'ouverture ?](#comment-régler-correctement-les-paramètres-qui-contrôlent-louverture-)
         - [Cas 1 : vous avez une zone morte de 15% sur votre vanne (les 15 premiers % ne permettent pas à l'eau chaude de circuler)](#cas-1--vous-avez-une-zone-morte-de-15-sur-votre-vanne-les-15-premiers--ne-permettent-pas-à-leau-chaude-de-circuler)
-        - [Cas 2 : vous ne voulez jamais totalement fermer totalement la vanne](#cas-2--vous-ne-voulez-jamais-totalement-fermer-totalement-la-vanne)
+        - [Cas 2 : vous ne voulez jamais totalement fermer totalement la vanne ni l'ouvrir totalement](#cas-2--vous-ne-voulez-jamais-totalement-fermer-totalement-la-vanne-ni-louvrir-totalement)
     - [autres auto-régulation](#autres-auto-régulation)
       - [L'auto-régulation en mode Expert](#lauto-régulation-en-mode-expert)
   - [Synthèse de l'algorithme d'auto-régulation](#synthèse-de-lalgorithme-dauto-régulation)
+  - [Étape suivante](#étape-suivante)
 
 Vous avez la possibilité d'activer la fonction d'auto-régulation pour les _VTherm_ de type `over_climate` uniquement.
 
 Il y a globalement 2 cas :
-1. Si votre sous-jacent est un _TRV_ et que la vanne est commandable directement dans Home Assistant (Sonoff TRVZB par exemple), cette fonction va autoriser _VTherm_ a manipuler directement l'ouverture de la vanne pour effectuer la régulation. L'ouverture est alors calculé par un algorithme de type _TPI_ (cf. [ici](algorithms.md)).
+1. Si votre sous-jacent est un _TRV_ et que la vanne est commandable directement dans Home Assistant ([Sonoff TRVZB](https://www.versatile-thermostat.org/fr/devices/sonoff-trvzb/) par exemple), cette fonction va autoriser _VTherm_ a manipuler directement l'ouverture de la vanne pour effectuer la régulation. L'ouverture est alors calculé par un algorithme de type _TPI_ (cf. [ici](algorithms.md)).
 2. Sinon, Versatile Thermostat va adapter la consigne de température donnée au climate sous-jacent afin que la température de la pièce atteigne réellement la consigne.
 
 ## Configuration
@@ -24,7 +25,6 @@ Il y a globalement 2 cas :
 Ce type d'auto-régulation nommé `Controle direct de la vanne` nécessite :
 1. une entité de type `climate` qui est mis dans les sous-jacents du _VTherm_,
 2. une entité de type `number` qui permet de contrôle du taux d'ouverture de la vanne du _TRV_,
-3. une entité facultative de type `number` permettant de calibrer la température interne du sous-jacent,
 3. une entité facultative de type `number` permettant le contrôle de la fermeture de la vanne
 
 Lorsque l'auto-régulation choisie est `Contrôle direct de la vanne` sur un _VTherm_ `over_climate` alors une nouvelle page de configuration nommée `Configuration de la régulation par vanne` apparait :
@@ -37,26 +37,28 @@ Elle permet de configurer les entités de contrôle de la vanne :
 
 Vous devez donner :
 1. autant d'entités de contrôle d'ouverture de la vanne qu'il y a de sous-jacents et dans le même ordre. Ces paramètres sont obligatoires,
-2. autant d'entités de calibrage du décalage de température qu'il y a de sous-jacents et dans le même ordre. Ces paramètres sont facultatifs ; ils doivent être tous fournis ou aucun. Leur utilisation, si disponible est fortement conseillée,
-3. autant d'entités de contrôle du taux de fermeture qu'il y a de sous-jacents et dans le même ordre. Ces paramètres sont facultatifs ; ils doivent être tous fournis ou aucun,
-4. `opening_threshold` : l'ouverture minimale de la vanne en dessous de laquelle la vanne doit être considérée comme fermée, et par conséquent, le paramètre 'max_closing_degree' s'applique,
-5. `max_closing_degree` : le pourcentage de fermeture maximum absolu. La vanne ne se fermera jamais plus que ce qui est indiqué dans cette valeur. Si vous voulez autoriser la fermeture complète de la vanne, alors laissez ce paramètre sur 100,
-6. `minimum_opening_degrees` : le pourcentage d'ouverture minimal lorsque le `opening_threshold` est dépassé et que le VTherm doit chauffer. Ce champ est personnalisable par vanne dans le cas d'un VTherm avec plusieurs vannes. Vous spécifiez la liste des ouvertures minimales séparées par des ','. La valeur par défaut est 0. Exemple : '20, 25, 30'. Lorsque la chauffe démarre (ie l'ouverture demandée est supérieure à `opening_threshold`), la vanne s'ouvrira avec une valeur supérieure ou égale à celle-ci et continuera d'augmenter régulièrement si nécessaire.
+2. autant d'entités de contrôle du taux de fermeture qu'il y a de sous-jacents et dans le même ordre. Ces paramètres sont facultatifs ; ils doivent être tous fournis ou aucun,
+3. `opening_threshold` : l'ouverture minimale de la vanne en dessous de laquelle la vanne doit être considérée comme fermée, et par conséquent, le paramètre 'max_closing_degree' s'applique,
+4. `max_closing_degree` : le pourcentage de fermeture maximum absolu. La vanne ne se fermera jamais plus que ce qui est indiqué dans cette valeur. Si vous voulez autoriser la fermeture complète de la vanne, alors laissez ce paramètre sur 100,
+5. `minimum_opening_degrees` : le pourcentage d'ouverture minimal lorsque le `opening_threshold` est dépassé et que le VTherm doit chauffer. Ce champ est personnalisable par vanne dans le cas d'un VTherm avec plusieurs vannes. Vous spécifiez la liste des ouvertures minimales séparées par des ','. La valeur par défaut est 0. Exemple : '20, 25, 30'. Lorsque la chauffe démarre (ie l'ouverture demandée est supérieure à `opening_threshold`), la vanne s'ouvrira avec une valeur supérieure ou égale à celle-ci et continuera d'augmenter régulièrement si nécessaire.
+6. `max_opening_degrees` : le pourcentage d'ouverture maximal que la vanne peut atteindre. Ce champ est personnalisable par vanne dans le cas d'un VTherm avec plusieurs vannes. Vous spécifiez la liste des ouvertures maximales séparées par des ','. La valeur par défaut est 100 (ouverture complète). Exemple : '80, 85, 90'. La vanne ne s'ouvrira jamais au-delà de cette valeur, permettant ainsi de limiter le débit d'eau chaude et d'optimiser la consommation énergétique. Cette valeur doit être strictement supérieure à `minimum_opening_degrees` pour chaque vanne.
 
-L'algorithme de calcul du taux d'ouverture est basé sur le _TPI_ qui est décrit [ici](algorithms.md). C'est le même algorithme qui est utilisé pour les _VTherm_ `over_switch` et `over_valve`.
+Le taux d'ouverture est calculé par l'algorithme choisi dans le champ « Algorithme » de cette page : le _TPI_ intégré, le même que pour les _VTherm_ `over_switch` et `over_valve`, ou un algorithme installé sous forme de plugin. Voir [les algorithmes](algorithms.md).
 
 Si une entité de type taux de fermeture de la vanne est configurée, il sera positionné à la valeur `100 - taux d'ouverture` pour forcer la vanne dans un état sinon elle est positionnée à 100.
 
 > ![Attention](images/tips.png) _*Notes*_
 > 1. l'attribut `hvac_action` des TRV Sonoff TRVZB est capricieux. Si la température interne du TRV est trop en décalage par rapport à la température de la pièce, l'entité `climate` peut indiquer que le _TRV_ ne chauffe pas alors que la vanne est forcée en ouverture par _VTherm_. Ce défaut n'a pas de conséquences puisque l'entité `climate` du _VTherm_ est corrigée et tient compte de l'ouverture de la vanne pour valoriser son attribut`hvac_action`. Ce défaut est minimisé mais pas totalement annulé par la configuration du calibrage du décalage.
-> 2. l'attribut du _VTherm_ `valve_open_percent` peut ne pas être égale à la valeur de 'opening degree' envoyé à la vanne. Si vous utilisé une des trois paramètres `opening_threshold`, `max_closing_degree`, `minimum_opening_degrees` un ajustement est fait. L'attribut personnalisé `valve_open_percent` est alors la valeur brute calculée par _VTherm_. La valeur `opening degree` envoyée à la vanne peut être adaptée.
+> 2. l'attribut du _VTherm_ `valve_open_percent` peut ne pas être égale à la valeur de 'opening degree' envoyé à la vanne. Si vous utilisez un des quatre paramètres `opening_threshold`, `max_closing_degree`, `minimum_opening_degrees` ou `max_opening_degrees`, un ajustement est fait. L'attribut personnalisé `valve_open_percent` est alors la valeur brute calculée par _VTherm_. La valeur `opening degree` envoyée à la vanne peut être adaptée.
 > 3. certains équipements ont des valeurs qui ne vont pas forcément de 0 à 100. _VTherm_ s'adapte automatiquement aux plages autorisées pour votre équipement.
 > 4. Si vous utilisez le paramètre de régulation `regulation_threshold` (cf. [over_climate régulation](./over-climate.md#lauto-régulation)), alors le `opening_threshold` sera ajusté pour qu'il ne soit jamais en dessous de cette valeur. En effet, le `regulation_threshold` est l'unité de régulation en dessous de laquelle la consigne n'est pas envoyée. Mettre un `opening_threshold` n'aurait aucun effet.
 > 5. Un _VTherm_ est considéré comme actif si `opening_threshold` est dépassé. Par conséquent, si le _VTherm_ commande une chaudière centrale, elle se sera pas allumée en dessous de cette valeur.
 
 #### Comment régler correctement les paramètres qui contrôlent l'ouverture ?
 
-Les 3 paramètres de réglage de l'ouverture de la vanne permettent un réglage fin du comportement de la vanne notamment au début du cycle de chauffe. Si on représente l'ouverture demandée par l'algorithme TPI en abscisse et l'ouverture réellement envoyée sur la vanne en ordonnée, on obtient cette courbe :
+**Note :** une visualisation graphique des impacts des paramètres de réglage de l'ouverture de la vanne est disponible [ici](https://github.com/jmcollin78/versatile_thermostat/discussions/1629). Un grand merci à @nicklassim80 pour cette contribution.
+
+Les 4 paramètres de réglage de l'ouverture de la vanne permettent un réglage fin du comportement de la vanne notamment au début du cycle de chauffe. Si on représente l'ouverture demandée par l'algorithme TPI en abscisse et l'ouverture réellement envoyée sur la vanne en ordonnée, on obtient cette courbe :
 
 <img src="../../images/opening-degree-graph.png" alt="réglage des paramètres d'ouverture" width="600">
 
@@ -66,6 +68,7 @@ Les réglages peuvent alors être :
 1. `minimum_opening_degrees`: 15. Dès que la chauffe est nécessaire il faut chauffer d'au moins 15%,
 2. `max_closing_degree` : la valeur par défaut (100) pour permettre une fermeture totale,
 3. `opening_threshold` : la valeur par défaut (0) pour déclencher la chauffe dès que c'est nécessaire
+4. `max_opening_degrees` : la valeur par défaut (100) pour permettre une ouverture totale de la vanne.
 
 Vous avez alors la courbe suivante :
 
@@ -75,13 +78,14 @@ ou si vous n'avez pas défini de `regulation_threshold` :
 
 <img src="../../images/opening-degree-default-2.png" alt="réglage des paramètres d'ouverture" width="400">
 
-##### Cas 2 : vous ne voulez jamais totalement fermer totalement la vanne
+##### Cas 2 : vous ne voulez jamais totalement fermer totalement la vanne ni l'ouvrir totalement
 
 Ce cas permet de traiter les bruits parasites lors d'une fermeture complète ou une sécurité pour toujours laisser un peu d'eau circuler et éviter d'endommager le circulateur.
 Les réglages peuvent alors être les suivants :
 1. `minimum_opening_degrees`: 10 pour chauffer d'au moins 10% lorsqu'une chauffe est nécessaire,
 2. `max_closing_degree` : 90 pour laisser toujours au moins 10% d'ouverture,
 3. `opening_threshold` : 10 pour considérer que les premiers 10% ne chauffent pas. Le TRV est alors en mode `Idle`
+4. `max_opening_degrees` : 50 pour limiter l'ouverture de la vanne à 50%.
 
 Vous avez alors la courbe suivante :
 
@@ -95,6 +99,9 @@ Dans ce deuxième cas, le Versatile Thermostat calcule un décalage basé sur le
 3. la différence entre la température extérieure et la consigne
 
 Ces trois informations sont combinées pour calculer le décalage qui sera ajouté à la consigne courante et envoyé au climate sous-jacent.
+
+> ![Astuce](images/tips.png) _*Note*_
+> L'auto-régulation ne s'applique que lorsque le _VTherm_ est en mode `Chauffage` ou `Refroidissement`. Dans tout autre mode (par exemple `Déshumidification` ou `Ventilation seule`), l'auto-régulation est désactivée et la consigne d'origine (non régulée) est envoyée à l'équipement sous-jacent.
 
 La fonction d'auto-régulation se paramètre avec :
 1. une degré de régulation :
@@ -123,8 +130,8 @@ Les paramètres réglables sont les suivants :
 2. `ki` : le facteur appliqué à l'accumulation des erreurs,
 3. `k_ext` : le facteur appliqué à la différence entre la température intérieure et la température externe,
 4. `offset_max` : le maximum de correction (offset) que la régulation peut appliquer,
-5. `stabilization_threshold` : un seuil de stabilisation qui lorsqu'il est atteint par l'erreur remet à 0, l'accumulation des erreurs,
-6. `accumulated_error_threshold` : le maximum pour l'accumulation d'erreur.
+5. `accumulated_error_threshold` : le maximum pour l'accumulation d'erreur.
+6. `overheat_protection`: si activé, divise l'accumulation d'erreur par 2 en cas d'inversion de signe.
 
 Pour le tuning il faut tenir compte de ces observations :
 1. `kp * erreur` va donner l'offset lié à l'erreur brute. Cet offset est directement proportionnel à l'erreur et sera à 0 lorsque la target sera atteinte,
@@ -140,7 +147,6 @@ Slow régulation :
     ki: 0.8 / 288.0  # 80% of the current internal regulation offset are caused by the average offset of the past 24 hours
     k_ext: 1.0 / 25.0  # this will add 1°C to the offset when it's 25°C colder outdoor than indoor
     offset_max: 2.0  # limit to a final offset of -2°C to +2°C
-    stabilization_threshold: 0.0  # this needs to be disabled as otherwise the long term accumulated error will always be reset when the temp briefly crosses from/to below/above the target
     accumulated_error_threshold: 2.0 * 288  # this allows up to 2°C long term offset in both directions
 
 Light régulation :
@@ -149,8 +155,8 @@ Light régulation :
     ki: 0.05
     k_ext: 0.05
     offset_max: 1.5
-    stabilization_threshold: 0.1
     accumulated_error_threshold: 10
+    overheat_protection: true
 
 
 Medium régulation :
@@ -159,8 +165,8 @@ Medium régulation :
     ki: 0.05
     k_ext: 0.1
     offset_max: 2
-    stabilization_threshold: 0.1
     accumulated_error_threshold: 20
+    overheat_protection: true
 
 
 Strong régulation :
@@ -175,8 +181,8 @@ Strong régulation :
     ki: 0.08
     k_ext: 0.0
     offset_max: 5
-    stabilization_threshold: 0.1
     accumulated_error_threshold: 50
+    overheat_protection: true
 
 Pour utiliser le mode Expert il vous faut déclarer les valeurs que vous souhaitez utiliser pour chacun de ces paramètres dans votre `configuration.yaml` sous la forme suivante. Exemple de 'Extrem regulation` :
 ```
@@ -186,8 +192,8 @@ versatile_thermostat:
         ki: 0.1
         k_ext: 0.0
         offset_max: 10
-        stabilization_threshold: 0.1
         accumulated_error_threshold: 80
+        overheat_protection: true
 ```
 et bien sur, configurer le mode auto-régulation du VTherm en mode Expert. Tous les _VTherm_ en mode **Expert** utiliseront ces mêmes paramètres, il n'est pas possible d'avoir plusieurs réglages expert différent.
 
@@ -199,3 +205,8 @@ Pour que les modifications soient prises en compte, il faut soit **relancer tota
 ## Synthèse de l'algorithme d'auto-régulation
 
 Une synthèse de l'algorithme d'auto-régulation est décrite [ici](algorithms.md#lalgorithme-dauto-régulation-sans-contrôle-de-la-vanne)
+
+## Étape suivante
+
+- Avec le contrôle direct de la vanne : [les coefficients du TPI](algorithms.md#configurez-les-coefficients-de-lalgorithme-tpi) (menu « Paramètres TPI »).
+- Dans les autres cas : [Les presets](feature-presets.md) (menu « Pre-réglages »).

@@ -4,6 +4,7 @@
   - [Principe](#principe)
     - [Calcul de la puissance activée](#calcul-de-la-puissance-activée)
   - [Configuration](#configuration)
+    - [Utiliser un template pour la valeur](#utiliser-un-template-pour-la-valeur)
     - [Comment trouver la bonne action ?](#comment-trouver-la-bonne-action-)
   - [Les évènements](#les-évènements)
   - [Avertissement](#avertissement)
@@ -12,16 +13,22 @@ Vous avez la possibilité de contrôler une chaudière centrale. A partir du mom
 
 ## Principe
 Le principe mis en place est globalement le suivant :
-1. une nouvelle entité de type `binary_sensor` et nommée par défaut `binary_sensor.central_boiler` est ajoutée,
+1. une nouvelle entité de type `binary_sensor` et nommée par défaut `binary_sensor.central_configuration_central_boiler` est ajoutée,
 2. dans la configuration des _VTherm_ vous indiquez si le VTherm doit contrôler la chaudière. En effet, dans une installation hétérogène, certains VTherm doivent commander la chaudière et d'autres non. Vous devez donc indiquer dans chaque configuration de VTherm si il contrôle la chaudière ou pas. A chauque _VTherm_ controlant la chaudière vous pouvez associer une puissance,
-3. le `binary_sensor.central_boiler` écoute les changements d'états des équipements des VTherm marqués comme contrôlant la chaudière,
-4. dès que le nombre d'équipements pilotés par le VTherm demandant du chauffage (ie son `hvac_action` passe à `Heating`)  ou que le total des puissance dépasse un seuil paramétrable, alors le `binary_sensor.central_boiler` passe à `on` et **si un service d'activation a été configuré, alors ce service est appelé**,
-5. si le nombre d'équipements nécessitant du chauffage repasse en dessous du seuil, alors le `binary_sensor.central_boiler` passe à `off` et si **un service de désactivation a été configuré, alors ce service est appelé**,
+3. le `binary_sensor.central_configuration_central_boiler` écoute les changements d'états des équipements des VTherm marqués comme contrôlant la chaudière,
+4. dès que le nombre d'équipements pilotés par le VTherm demandant du chauffage (ie son `hvac_action` passe à `Heating`)  ou que le total des puissance dépasse un seuil paramétrable, alors le `binary_sensor.central_configuration_central_boiler` passe à `on` et **si un service d'activation a été configuré, alors ce service est appelé**,
+5. si aucun des deux seuils non nuls n'est atteint, alors le `binary_sensor.central_configuration_central_boiler` passe à `off` et si **un service de désactivation a été configuré, alors ce service est appelé**,
 6. vous avez accès à 4 entités :
    - une de type `number` nommée par défaut `number.boiler_activation_threshold`, donne le seuil de déclenchement. Ce seuil est en nombre d'équipements (radiateurs) qui demandent du chauffage et non pas le nombre de _VTherm_ demandant du chauffage.
    - une de type `sensor` nommée par défaut `sensor.nb_device_active_for_boiler`, donne le nombre d'équipements qui demandent du chauffage. Par exemple, un VTherm ayant 4 vannes dont 3 demandent du chauffage fera passer ce capteur à 3. Seuls les équipements des _VTherm_ qui sont marqués pour contrôler la chaudière centrale sont comptabilisés.
    - une de type `number` nommée `number.boiler_power_activation_threshold` qui donne le seuil de puissance de déclenchement. Si le total des puissances activées par des _Vtherm_ controlant la chaudière est dépassé alors la chaudière sera activée,
    - une de type `sensor` nommée `sensor.total_power_active_for_boiler` qui donne le dernier total de puissance calculé.
+
+La chaudière centrale est activée dès que l'un des deux seuils est atteint ou dépassé : le seuil du nombre de sous-jacents actifs **ou** le seuil de puissance demandée. Il s'agit d'un « ou » logique. Mettre un seuil à zéro désactive le critère correspondant.
+
+> **Remarque sur le seuil du nombre de sous-jacents actifs :** pour un _VTherm_ pilotant des vannes, le comptage tient compte de leur état actif. Les réglages des vannes, notamment le seuil d'ouverture, déterminent donc si elles sont comptabilisées.
+
+> **Attention au seuil de puissance :** il est calculé à partir de la puissance demandée par l'algorithme, indépendamment de l'état d'ouverture des vannes. La puissance demandée peut être non nulle alors que les seuils d'ouverture configurés empêchent les vannes d'être considérées comme actives. Ce seuil est donc déconseillé pour les _VTherm_ pilotant des vannes.
 
 Vous avez donc en permanence, les informations qui permettent de piloter et régler le déclenchement de la chaudière.
 
@@ -51,6 +58,8 @@ Sur la page suivante vous pouvez donner la configuration des actions (ex service
 
 Le premier paramètre donne un délai en secondes avant d'activer la chaudière. La valeur par défaut est de 0 donc la chaudière est activée tout de suite dès qu'un seuil est franchi. Si vous avez besoin de laisser du temps aux vannes de s'ouvrir (par exemple), mettez une valeur positive en secondes. Certaines vannes pour des planchers chauffant peuvent mettre plusieurs minutes à s'ouvrir et il peut être dommageable d'activer la pompe de la chaudière avant que les vannes ne soient ouvertes.
 
+Le second paramètre correspond au délai du **maintien actif** (keep-alive) en secondes. Cet paramètre permet de relancer périodiquement la commande d'allumage de la chaudière pour s'assurer que la chaudière reste bien allumée. Par exemple, si une commande de la chaudière n'est pas bien reçue ou si la chaudière s'éteint d'elle-même, le même ordre sera renvoyé à intervalle régulier. La valeur par défaut est de 0, ce qui signifie que le maintien actif est désactivé. Si vous voulez activer cette fonction, mettez une valeur positive en secondes (par exemple 60 pour relancer la commande chaque minute). Ce paramètre est optionnel et peut être laissé à 0 si vous n'en avez pas besoin.
+
 Les actions (ex services) se configurent comme indiqué dans la page :
 1. le format général est `entity_id/service_id[/attribut:valeur]` (où `/attribut:valeur` est facultatif),
 2. `entity_id` est le nom de l'entité qui commande la chaudière sous la forme `domain.entity_name`. Par exemple: `switch.chaudiere` pour les chaudière commandée par un switch ou `climate.chaudière` pour une chaudière commandée par un thermostat ou tout autre entité qui permet le contrôle de la chaudière (il n'y a pas de limitation).  On peut aussi commuter des entrées (`helpers`) comme des `input_boolean` ou `input_number`.
@@ -63,6 +72,16 @@ Exemples (à ajuster à votre cas) :
 - `switch.pompe_chaudiere/switch.turn_on` : pour allumer le swicth qui alimente la pompe de la chaudière,
 - `switch.pompe_chaudiere/switch.turn_off` : pour allumer le swicth qui alimente la pompe de la chaudière,
 - ...
+
+### Utiliser un template pour la valeur
+La valeur (la partie après `attribut:`) peut être un template Home Assistant. Le template est évalué à chaque envoi de la commande : à l'allumage, à l'extinction et à chaque maintien actif (keep-alive). La valeur peut contenir des `/` et des `:`.
+
+Exemple pour une chaudière pilotée par un régulateur d'ambiance dont la consigne est relative à sa propre température mesurée :
+- allumage : `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) + 1 }}`
+- extinction : `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) - 2 }}`
+
+> **Astuce**
+> Utilisez `float(défaut)` pour que le template n'échoue jamais, et activez le maintien actif pour que la consigne suive la température mesurée. Si un template ne peut pas être évalué, la commande est ignorée et une erreur est écrite dans les logs. Un template qui ne compile pas est refusé lors de la validation de la configuration.
 
 > **Note**
 > Il n'y a pas de délai pour l'extinction de la chaudière. C'est volontaire pour vous éviter de laisser tourner la chaudière alors que toutes les vannes sont fermées. Il faudrait un délai négatif pour bien faire (ie couper la chaudière avant de fermer les vannes) mais ce n'est pas possible en l'état puisque c'est la manipulation des vannes qui délcenche la chaudière et pas l'inverse.
@@ -95,7 +114,7 @@ Un évènement d'allumage :
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: true
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Central boiler
   state_attributes: null
 origin: LOCAL
@@ -111,7 +130,7 @@ Un évènement d'extinction :
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: false
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Central boiler
   state_attributes: null
 origin: LOCAL

@@ -1,29 +1,30 @@
 # Selbstregulierung
 
 - [Selbstregulierung](#selbstregulierung)
-    - [Konfiguration](#konfiguration)
-      - [Selbstregulierung bei direkter Ventilkontrolle](#selbstregulierung-bei-direkter-ventilkontrolle)
-      - [Andere Selbsregulierung](#andere-selbsregulierung)
+  - [Konfiguration](#konfiguration)
+    - [Selbstregulierung bei direkter Ventilkontrolle](#selbstregulierung-bei-direkter-ventilkontrolle)
+      - [Wie werden die Parameter, die die Öffnungweite steuern, richtig eingestellt?](#wie-werden-die-parameter-die-die-öffnungweite-steuern-richtig-eingestellt)
+        - [Fall 1: Es gibt eine 15-prozentige Totzone an dem Ventil (die ersten 15% lassen kein heißes Wasser durch)](#fall-1-es-gibt-eine-15-prozentige-totzone-an-dem-ventil-die-ersten-15-lassen-kein-heißes-wasser-durch)
+        - [Fall 2: Das Ventil soll niemals vollständig schließen](#fall-2-das-ventil-soll-niemals-vollständig-schließen)
+    - [Andere Selbsregulierung](#andere-selbsregulierung)
       - [Selbstregulierung im Expertenmodus](#selbstregulierung-im-expertenmodus)
-      - [Zusammenfassung des Selbstregulierungsalgorithmus](#zusammenfassung-des-selbstregulierungsalgorithmus)
+  - [Zusammenfassung des Selbstregulierungsalgorithmus](#zusammenfassung-des-selbstregulierungsalgorithmus)
+  - [Nächster Schritt](#nächster-schritt)
 
 Sie haben die Möglichkeit, die Selbstregulierungsfunktion nur für _VTherms_ des Typs `over_climate` zu aktivieren.
 
 In der Regel gibt es zwei Fälle: Erstens
-1. Wenn Ihr verwendetes Gerät ein _TRV_ ist und das Ventil direkt im Home Assistant gesteuert werden kann (z.B. Sonoff TRVZB), ermöglicht diese Funktion _VTherm_ die direkte Steuerung der Ventilöffnung zur Regelung der Temperatur. Die Öffnung wird dann durch einen Algorithmus vom Typ _TPI_ berechnet (siehe [hier](algorithms.md)).
+1. Wenn Ihr verwendetes Gerät ein _TRV_ ist und das Ventil direkt im Home Assistant gesteuert werden kann (z.B. [Sonoff TRVZB](https://www.versatile-thermostat.org/de/devices/sonoff-trvzb/)), ermöglicht diese Funktion _VTherm_ die direkte Steuerung der Ventilöffnung zur Regelung der Temperatur. Die Öffnung wird dann durch einen Algorithmus vom Typ _TPI_ berechnet (siehe [hier](algorithms.md)).
 2. Andernfalls passt Versatile Thermostat den dem jeweiligen Klima vorgegebenen Temperatursollwert an, um sicherzustellen, dass die Raumtemperatur tatsächlich den Sollwert erreicht.
 
 ## Konfiguration
 
-### Selbstregulierung bei direkter Ventilkontrolle]
-
--- this § is not updated since v 8.0. Please see the English version --
+### Selbstregulierung bei direkter Ventilkontrolle
 
 Diese Art der Selbstregulierung, `Direct Valve Control` genannt, benötigt:
 1. Eine Einheit des Typs `climate`, die in den zugehörigen Geräten des _VTherm_ enthalten ist.
 2. Eine Entität des Typs `number` zur Steuerung der Ventilöffnungsrate des _TRV_.
-3. Eine optionale Entität des Typs `number` zur Kalibrierung der internen Temperatur des zugehörigen Geräts.
-4. Eine optionale Einheit des Typs `number` zur Steuerung des Ventilschließens.
+3. Eine optionale Einheit des Typs `number` zur Steuerung des Ventilschließens.
 
 Wenn die gewählte Selbstregulierung `Direct Valve Control` auf einem _VTherm_ `over_climate` ist, erscheint eine neue Konfigurationsseite mit dem Namen `Valve Regulation Configuration`:
 
@@ -35,18 +36,58 @@ Dies ermöglicht Ihnen die Konfiguration der Ventilsteuerungseinheiten:
 
 Sie müssen folgendes angeben:
 1. So viele Einheiten zur Steuerung der Ventilöffnung, wie es zugehörige Geräte gibt, in der gleichen Reihenfolge. Diese Parameter sind obligatorisch.
-2. So viele Temperatur-Offset-Kalibrierungseinheiten, wie es zugehörige Geräte gibt, in der gleichen Reihenfolge. Diese Parameter sind optional; entweder müssen alle angegeben werden oder keiner. Ihre Verwendung, sofern vorhanden, wird dringend empfohlen.
-3. So viele Einheiten zur Steuerung der Schließgeschwindigkeit des Ventils, wie es zugehörige Geräte gibt, in der gleichen Reihenfolge. Diese Parameter sind optional; entweder müssen alle angegeben werden oder keiner.
-4. Eine Liste der minimalen Ventilöffnungswerte, wenn das Ventil geöffnet sein muss. Dieses Feld ist eine Liste von Ganzzahlen. Wenn das Ventil geöffnet sein muss, wird es mindestens bis zu diesem Wert geöffnet; andernfalls wird es vollständig geschlossen (0). Auf diese Weise wird sichergestellt, dass genügend Wasser fließt, wenn geheizt werden muss, während es vollständig geschlossen bleibt, wenn keine Heizung benötigt wird.
+2. So viele Einheiten zur Steuerung der Schließgeschwindigkeit des Ventils, wie es zugehörige Geräte gibt, in der gleichen Reihenfolge. Diese Parameter sind optional; entweder müssen alle angegeben werden oder keiner.
+3. `opening_threshold`: die minimale Ventilöffnung, unterhalb derer das Ventil als geschlossen gilt, und folglich gilt der Parameter 'max_closing_degree',
+4. `max_closing_degree`: der absolute maximale Schließgrad. Das Ventil wird niemals mehr schließen als dieser Wert. Wenn Sie ein vollständiges Schließen des Ventils zulassen möchten, lassen Sie diesen Parameter auf 100,
+5. `minimum_opening_degrees`: der minimale Öffnungsgrad, wenn der `opening_threshold` überschritten wird und der VTherm heizen muss. Dieses Feld ist pro Ventil anpassbar bei einem VTherm mit mehreren Ventilen. Sie geben die Liste der minimalen Öffnungen durch ',' getrennt an. Der Standardwert ist 0. Beispiel: '20, 25, 30'. Wenn das Heizen beginnt (d.h. die angeforderte Öffnung größer als `opening_threshold` ist), öffnet sich das Ventil mit einem Wert größer oder gleich diesem und wird bei Bedarf regelmäßig weiter erhöht.
+6. `max_opening_degrees`: der maximale Öffnungsgrad, den das Ventil erreichen kann. Dieses Feld ist pro Ventil anpassbar bei einem VTherm mit mehreren Ventilen. Sie geben die Liste der maximalen Öffnungen durch ',' getrennt an. Der Standardwert ist 100 (volle Öffnung). Beispiel: '80, 85, 90'. Das Ventil wird niemals über diesen Wert hinaus öffnen, wodurch Sie den Heißwasserdurchfluss begrenzen und den Energieverbrauch optimieren können. Dieser Wert muss für jedes Ventil streng größer als `minimum_opening_degrees` sein.
 
-Der Algorithmus zur Berechnung der Öffnungsrate basiert auf _TPI_, der beschrieben ist [hier](algorithms.md). Es ist derselbe Algorithmus, der für _VTherm_ `over_switch` und `over_valve` verwendet wird.
+Die Öffnungsrate wird von dem Algorithmus berechnet, der im Feld „Algorithmus“ dieser Seite gewählt ist: dem integrierten _TPI_, demselben wie für _VTherm_ `over_switch` und `over_valve`, oder einem als Plugin installierten Algorithmus. Siehe [Algorithmen](algorithms.md).
 
 Wenn eine Ventilschließrate konfiguriert ist, wird sie auf `100 - Öffnungsrate` gesetzt, um das Ventil in einen bestimmten Zustand zu zwingen, andernfalls wird sie auf 100 gesetzt.
 
 > ![Warnung](images/tips.png) _*Hinweise*_
 > 1. Seit Version 7.2.2 ist es möglich, die Entity "Schließungsgrad" auf Sonoff TRVZB zu verwenden.
 > 2. Das Attribut `hvac_action` von Sonoff TRVZB TRVs ist unzuverlässig. Wenn die Innentemperatur des TRV zu sehr von der Raumtemperatur abweicht, kann die `climate`-Entity anzeigen, dass das _TRV_ nicht heizt, auch wenn das Ventil durch _VTherm_ zwangsweise geöffnet wird. Dieses Problem hat keine Auswirkungen, da die `climate`-Entity von _VTherm_ korrigiert wird und die Ventilöffnung bei der Festlegung des Attributs `hvac_action` berücksichtigt. Dieses Problem wird durch die Konfiguration der Temperatur-Offset-Kalibrierung abgeschwächt, aber nicht vollständig beseitigt.
-> 3. Das Attribut `valve_open_percent` von _VTherm_ stimmt möglicherweise nicht mit dem an das Ventil gesendeten `Öffnungsgrad`-Wert überein. Wenn Sie einen Mindestöffnungswert konfiguriert haben oder die Schließsteuerung verwenden, wird eine Anpassung vorgenommen. Das Attribut `valve_open_percent` stellt den von _VTherm_ berechneten Rohwert dar. Der an das Ventil gesendete `Öffnungsgrad`-Wert kann entsprechend angepasst werden.
+> 3. Das Attribut `valve_open_percent` von _VTherm_ stimmt möglicherweise nicht mit dem an das Ventil gesendeten `Öffnungsgrad`-Wert überein. Wenn Sie einen der vier Parameter `opening_threshold`, `max_closing_degree`, `minimum_opening_degrees` oder `max_opening_degrees` verwenden, wird eine Anpassung vorgenommen. Das Attribut `valve_open_percent` stellt den von _VTherm_ berechneten Rohwert dar. Der an das Ventil gesendete `Öffnungsgrad`-Wert kann entsprechend angepasst werden.
+> 4. Ist der Regelparameter `regulation_threshold` (siehe [over_climate regulation](./over-climate.md#selbstregulierung)) in Benutzung, wird der Wert von `opening_threshold` so angepasst, dass er niemals unter diesen Wert fällt. Der `regulation_threshold` ist nämlich die Regeleinheit, unter der der Sollwert nicht gesendet wird. Die Einstellung eines `opening_threshold` hätte daher keine Auswirkung.
+> 5. Ein _VTherm_ gilt als aktiv, wenn der Wert `opening_threshold` überschritten wird. Also wenn _VTherm_ einene Zentralheizung suert, wird diese unterhalb des Wertes nicht eingeschaltet.
+
+#### Wie werden die Parameter, die die Öffnungweite steuern, richtig eingestellt?
+
+**Note :** a graphical visualization of the impacts of the valve opening adjustment parameters is available [here](https://github.com/jmcollin78/versatile_thermostat/discussions/1629). Thanks a lot to @nicklassim80 for this contribution.
+
+Die 4 Einstellparameter der Ventilöffnung ermöglichen eine Feinabstimmung des Ventilverhaltens, insbesondere zu Beginn des Heizzyklus. Wenn man die vom TPI-Algorithmus angeforderte Öffnung auf der x-Achse und die tatsächlich an das Ventil gesendete Öffnung auf der y-Achse darstellen, erhält man diese Kurve:
+
+<img src="../../images/opening-degree-graph.png" alt="Öffnungsparameter einstellen" width="600">
+
+##### Fall 1: Es gibt eine 15-prozentige Totzone an dem Ventil (die ersten 15% lassen kein heißes Wasser durch)
+
+Die Einstellungen können dann wie folgt lauten:
+1. `minimum_opening_degrees`: 15. Sobald Heizen erforderlich ist, muss mindestens um 15% geöffnet werden.
+2. `max_closing_degree`: Der Standardwert (100) ermöglicht ein vollständiges Schließen.
+3. `opening_threshold`: Der Standardwert (0) löst Heizen aus, sobald dies erforderlich ist.
+
+Sie erhalten dann folgende Kurve:
+
+<img src="../../images/opening-degree-default-1.png" alt="Öffnungsparameter einstellen" width="400">
+
+oder wenn kein `regulation_threshold` definiert ist:
+
+<img src="../../images/opening-degree-default-2.png" alt="Öffnungsparameter einstellen" width="400">
+
+##### Fall 2: Das Ventil soll niemals vollständig schließen
+
+Dieser Fall ermöglicht es, Störgeräuschen beim vollständigen Schließens zu behandeln oder dient als Sicherheitsmaßnahme, um immer etwas Wasser zirkulieren zu lassen und eine Beschädigung der Umwälzpumpe zu vermeiden.
+Die Einstellungen können dann wie folgt sein:
+1. `minimum_opening_degrees`: 10, um bei Heizbedarf mindestens 10% zu öffnen,
+2. `max_closing_degree`: 90, um immer mindestens 10% Öffnungweite zu haben,
+3. `opening_threshold`: 10, zur Berücksichtigung, dass die ersten 10 % nicht heizen. Das TRV befindet sich dann im `Idle`-Modus.
+4. `max_opening_degrees`: 50, um die Öffnung des Ventils auf 50 % zu begrenzen.
+
+Sie erhalten dann folgende Kurve:
+
+<img src="../../images/opening-degree-default-3.png" alt="Öffnungsparameter einstellen" width="400">
 
 ### Andere Selbsregulierung
 
@@ -56,6 +97,9 @@ Im zweiten Fall berechnet Versatile Thermostat einen Offset auf der Grundlage de
 3. Die Differenz zwischen der Außentemperatur und dem Sollwert.
 
 Diese drei Informationen werden kombiniert, um den Offset zu berechnen, der zum aktuellen Sollwert addiert und an das zugehörige Klima gesendet wird.
+
+> ![Tipp](images/tips.png) _*Hinweis*_
+> Die Selbstregulierung wird nur angewendet, wenn sich das _VTherm_ im Modus `Heizen` oder `Kühlen` befindet. In jedem anderen Modus (zum Beispiel `Entfeuchten` oder `Nur Lüften`) ist die Selbstregulierung deaktiviert und der ursprüngliche (nicht regulierte) Sollwert wird an das zugehörige Gerät gesendet.
 
 Die Selbstregulierung wird konfiguriert mit:
 1. Einer Regulierungsstufe::
@@ -161,3 +205,8 @@ Um die Änderungen zu übernehmen, müssen Sie entweder **den Home Assistant kom
 ## Zusammenfassung des Selbstregulierungsalgorithmus
 
 Eine Zusammenfassung des Algorithmus zur Autoregulierung wird [hier](algorithms.md#the-auto-regulation-algorithm-without-valve-control) beschrieben.
+
+## Nächster Schritt
+
+- Mit direkter Ventilsteuerung: [die TPI-Koeffizienten](algorithms.md#konfigurieren-der-tpi-algorithmusfaktoren) (Menü „TPI-Parameter“).
+- In allen anderen Fällen: [Voreinstellungen](feature-presets.md) (Menü „Temperaturvoreinstellungen“).

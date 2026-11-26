@@ -1,14 +1,16 @@
 # Einige unverzichtbare Ergänzungen
 
+Viele Ergänzungen für _VTherm_ (Dashboard-Karten, Zeitplaner, Algorithmen, Gerätehilfen...) sind im [Plugin-Katalog](https://www.versatile-thermostat.org/en/plugins/) der Website mit ihrer Zertifizierungsstufe aufgeführt. Diese Seite zeigt einige Anwendungsbeispiele.
+
 - [Einige unverzichtbare Ergänzungen](#einige-unverzichtbare-ergänzungen)
   - [Die Versatile Thermostat UI Card](#die-versatile-thermostat-ui-card)
-  - [Die Scheduler Komponente!](#die-scheduler-komponente)
+  - [Holm Climate Card](#holm-climate-card)
+  - [Ein grafischer Zeitplaner (empfohlen)](#ein-grafischer-zeitplaner-empfohlen)
   - [Regelungskurven mit Plotly](#regelungskurven-mit-plotly)
-  - [Regulation curves with Apex-charts (thanks to @gael1980)](#regulation-curves-with-apex-charts-thanks-to-gael1980)
   - [Benachrichtigung mit dem AppDaemon NOTIFIER](#benachrichtigung-mit-dem-appdaemon-notifier)
   - [Eine sehr schöne Karte (Danke @Jeffodilo)](#eine-sehr-schöne-karte-danke-jeffodilo)
-  - [Indoor "Feels Like" Temperature and the "Damp Cold" Effect (thanks to @nicola-spreafico)](#indoor-feels-like-temperature-and-the-damp-cold-effect-thanks-to-nicola-spreafico)
-  - [A complementary integration to anticipate setpoint changes (thanks to @RastaChaum)](#a-complementary-integration-to-anticipate-setpoint-changes-thanks-to-rastachaum)
+  - [Gefühlte Innentemperatur und "feuchte Kälte"-Effekt (Danke @nicola-spreafico)](#gefühlte-innentemperatur-und-feuchte-kälte-effekt-danke-nicola-spreafico)
+  - [Eine zusätzliche Integration, um Vorgabeänderungen vorauszusehen (Danke @RastaChaum)](#eine-zusätzliche-integration-um-vorgabeänderungen-vorauszusehen-danke-rastachaum)
 
 
 ## Die Versatile Thermostat UI Card
@@ -16,34 +18,22 @@ Es wurde eine spezielle Karte für das Versatile Thermostat entwickelt (basieren
 
 ![image](https://github.com/jmcollin78/versatile-thermostat-ui-card/blob/master/assets/1.png?raw=true)
 
-## Die Scheduler Komponente!
+Weitere mit _VTherm_ kompatible Dashboard-Karten wie Equinox sind im [Plugin-Katalog](https://www.versatile-thermostat.org/de/plugins/?family=interface) aufgeführt.
 
-Um die volle Leistungsfähigkeit von Versatile Thermostat voll auszuschöpfen, empfehle ich es zusammen mit der [Scheduler Komponente](https://github.com/nielsfaber/scheduler-component) zu verwenden. 
-Die Scheduler-Komponente ermöglicht die Klimasteuerung anhand vordefinierter Modi. Diese Funktion ist bei einem herkömmlichen Thermostat nur von begrenztem Nutzen, wird jedoch mit dem Versatile Thermostat zu einem leistungsstarken Werkzeug:
+Eine mit _VTherm_ kompatible Karte wie diese wird für den Ruhemodus (`Zzz`) benötigt: die Standard-Thermostatkarte (Climate) von Home Assistant listet `sleep` zwar in `hvac_modes` auf, kann ihn aber nicht auswählen.
 
-Angenommen, es ist sowohl Versatile Thermostat als auch die Scheduler-Komponente installiert.
+## Holm Climate Card
 
-Fügen Sie im Scheduler einen Zeitplan hinzu:
+Die [Holm Climate Card](https://www.versatile-thermostat.org/en/plugins/#kaaribou/climate-card-holm) ist eine mit _VTherm_ kompatible Dashboard-Karte.
 
-![image](https://user-images.githubusercontent.com/1717155/119146454-ee1a9d80-ba4a-11eb-80ae-3074c3511830.png)
+Die [SmartPI-Integration](https://www.versatile-thermostat.org/en/plugins/#kipk/vtherm_smartpi) ist ebenfalls im Plugin-Katalog aufgeführt.
 
-Zuerst die Gruppe "Klima" auswählen, dann eine (oder mehrere) Entität(en) wählen, "MAKE SCHEME" anwählen und auf "Weiter" klicken:
-(Man kann auch "SET PRESET" wählen, aber ich bevorzuge "MAKE SCHEME".)
+## Ein grafischer Zeitplaner (empfohlen)
 
-![image](https://user-images.githubusercontent.com/1717155/119147210-aa746380-ba4b-11eb-8def-479a741c0ba7.png)
-
-Nun Modusschema definieren und speichern:
-
-
-![image](https://user-images.githubusercontent.com/1717155/119147784-2f5f7d00-ba4c-11eb-9de4-5e62ff5e71a8.png)
-
-In diesem Beispiel habe ich den ECO-Modus für die Nacht und für den Tag eingestellt, wenn niemand zu Hause ist, den BOOST-Modus für den Morgen und den KOMFORT-Modus für den Abend.
-
-
-Ich hoffe, dieses Beispiel hilft weiter. Über Feedback freuen wir uns!
+Um Ihre _VTherm_ über die Woche zu programmieren, ist die empfohlene Ergänzung der [grafische Zeitplaner](https://www.versatile-thermostat.org/en/plugins/#armellarcier/ha-chauffage) (ein unabhängiges Projekt). Damit erstellen Sie mehrere Wochenpläne (Normal, Homeoffice, Urlaub...) mit einer visuellen Lovelace-Karte, auf der Sie die Zeitfenster verschieben. Ein manuell geänderter Sollwert wird temporär, danach kehrt der Thermostat zu seinem Plan zurück.
 
 ## Regelungskurven mit Plotly
-Man kann eine Kurve ähnlich der in [einige Ergebnisse](#../../README-de.md#einige-ergebnisse) gezeigten erhalten, indem ausschließlich die [hier](reference.md#benutzerdefinierte-attribute) beschriebenen benutzerdefinierten Attribute des Thermostats verwendet werden:
+Man kann Kurven wie die im Beispiel am Ende dieses Abschnitts gezeigten erhalten, indem ausschließlich die [hier](reference.md#benutzerdefinierte-attribute) beschriebenen benutzerdefinierten Attribute des Thermostats verwendet werden:
 
 Ersetzen Sie die Werte zwischen `[[ ]]` durch Ihre eigenen.
 <details>
@@ -127,10 +117,9 @@ Beispiel für mit Plotly erstellte Kurven:
 
 ![image](images/plotly-curves.png)
 
-## Regulation curves with Apex-charts (thanks to @gael1980)
-Apex chart allows to display some great reguation curves. @Gael1980 gives us a very good example [here](https://github.com/jmcollin78/versatile_thermostat/discussions/1239).
+Um den Verlauf einer beliebigen Entity und ihrer Attribute ohne Kartenkonfiguration zu untersuchen, können Sie auch [HA Entity Explorer](https://www.versatile-thermostat.org/de/plugins/#KipK/ha_entity_explorer) verwenden.
 
-![Apex chart by Gael1980](../../images/apex-chart-by-gael1980.png)
+Der [Log-Analyser](https://www.versatile-thermostat.org/de/debugger/) der Website stellt ebenfalls Temperaturen, Modi und Presets eines _VTherm_ aus einer Log-Datei dar, ohne Konfiguration in Home Assistant (siehe [Log-Collector](feature-logs-collector.md)).
 
 ## Benachrichtigung mit dem AppDaemon NOTIFIER
 Diese Automatisierung nutzt die hervorragende AppDaemon-App namens NOTIFIER, die von Horizon Domotique entwickelt wurde und [hier](https://www.youtube.com/watch?v=chJylIK0ASo&ab_channel=HorizonDomotique) vorgestellt wird. Der Code ist [hier](https://github.com/jlpouffier/home-assistant-config/blob/master/appdaemon/apps/notifier.py) verfügbar. Damit können Benutzer über sicherheitsrelevante Ereignisse benachrichtigt werden, die an einem beliebigen Versatile Thermostat auftreten.
@@ -493,12 +482,12 @@ cards:
 ```
 </details>
 
-## Indoor "Feels Like" Temperature and the "Damp Cold" Effect (thanks to @nicola-spreafico)
-An brillant post to add a feature name "Feels like" or "Damp Cold". You can force the target temperature to a higher value depending on weather conditions like humidity or wind.
-The post is [here](https://github.com/jmcollin78/versatile_thermostat/discussions/1211)
+## Gefühlte Innentemperatur und "feuchte Kälte"-Effekt (Danke @nicola-spreafico)
+Ein brillanter Artikel über die Einführung einer Funktion namens „gefühlte Temperatur“ oder „nasse Kälte“. Sie können die Zieltemperatur je nach Wetterbedingungen wie Luftfeuchtigkeit oder Wind auf einen höheren Wert einstellen.
+Der Beitrag ist [hier](https://github.com/jmcollin78/versatile_thermostat/discussions/1211) zu finden.
 
-## A complementary integration to anticipate setpoint changes (thanks to @RastaChaum)
-This integration (in beta as of 11/23/2025) proposes to anticipate the setpoint changes of your Scheduler so that the target temperature is reached at the time of the Scheduler change. It learns the behavior of your VTherm (temperature rise time, speed and temperature rise time) and applies a predictive algorithm to anticipate the Scheduler change.
-The approach is very interesting and offers a good complement to _VTherm_.
+## Eine zusätzliche Integration, um Vorgabeänderungen vorauszusehen (Danke @RastaChaum)
+Diese Integration (in der Beta-Phase bis zum 23.11.2025) ermöglicht es, Änderungen der Sollwerte Ihres Schedulers zu prognostizieren, damit die Solltemperatur zum Zeitpunkt der Änderung des Schedulers erreicht ist. Sie lernt das Verhalten Ihres VTherm (Aufheizzeit, Geschwindigkeit und Aufheizzeit) und wendet einen vorausschauenden Algorithmus an, um die Änderung des Schedulers vorwegzunehmen.
+Der Ansatz ist sehr interessant und bietet eine gute Ergänzung zum _VTherm_.
 
-It is available [here](https://github.com/RastaChaum/Intelligent-Heating-Pilot)
+Es ist [hier](https://github.com/RastaChaum/Intelligent-Heating-Pilot) zu finden.

@@ -1,6 +1,6 @@
-# Le contrôle d'une chaudière centrale# Controlling a Central Boiler
+# Controlling a Central Boiler
 
-- [Le contrôle d'une chaudière centrale# Controlling a Central Boiler](#le-contrôle-dune-chaudière-centrale-controlling-a-central-boiler)
+- [Controlling a Central Boiler](#controlling-a-central-boiler)
   - [Principle](#principle)
     - [Active power calculation](#active-power-calculation)
   - [Configuration](#configuration)
@@ -12,16 +12,22 @@ You can control a centralized boiler. As long as it's possible to trigger or sto
 
 ## Principle
 The principle implemented is globally the following:
-1. a new entity of type `binary_sensor` named by default `binary_sensor.central_boiler` is added,
+1. a new entity of type `binary_sensor` named by default `binary_sensor.central_configuration_central_boiler` is added,
 2. in the _VTherm_ configuration you indicate whether the VTherm should control the boiler. Indeed, in a heterogeneous installation, some VTherm must control the boiler and others not. You must therefore indicate in each VTherm configuration whether it controls the boiler or not. For each _VTherm_ controlling the boiler you can associate a power,
-3. the `binary_sensor.central_boiler` listens to state changes of equipment from VTherm marked as controlling the boiler,
-4. as soon as the number of equipment controlled by the VTherm requesting heating (i.e. its `hvac_action` changes to `Heating`) or the total power exceeds a configurable threshold, then the `binary_sensor.central_boiler` switches to `on` and **if an activation service has been configured, then this service is called**,
-5. if the number of equipment requiring heating falls below the threshold, then the `binary_sensor.central_boiler` switches to `off` and if **a deactivation service has been configured, then this service is called**,
+3. the `binary_sensor.central_configuration_central_boiler` listens to state changes of equipment from VTherm marked as controlling the boiler,
+4. as soon as the number of equipment controlled by the VTherm requesting heating (i.e. its `hvac_action` changes to `Heating`) or the total power exceeds a configurable threshold, then the `binary_sensor.central_configuration_central_boiler` switches to `on` and **if an activation service has been configured, then this service is called**,
+5. if neither non-zero threshold is reached anymore, then the `binary_sensor.central_configuration_central_boiler` switches to `off` and if **a deactivation service has been configured, then this service is called**,
 6. you have access to 4 entities:
    - one of type `number` named by default `number.boiler_activation_threshold`, gives the activation threshold. This threshold is in number of equipment (radiators) requesting heating and not the number of _VTherm_ requesting heating.
    - one of type `sensor` named by default `sensor.nb_device_active_for_boiler`, gives the number of equipment requesting heating. For example, a VTherm with 4 valves of which 3 are requesting heating will set this sensor to 3. Only equipment from _VTherm_ that are marked to control the central boiler are counted.
    - one of type `number` named `number.boiler_power_activation_threshold` which gives the power activation threshold. If the total power activated by _Vtherm_ controlling the boiler is exceeded then the boiler will be activated,
    - one of type `sensor` named `sensor.total_power_active_for_boiler` which gives the last calculated total power.
+
+The central boiler is activated as soon as either threshold is reached or exceeded: the active-underlying count threshold **or** the requested-power threshold. This is a logical OR. Setting a threshold to zero disables the corresponding criterion.
+
+> **Note on the active-underlying count threshold:** for a _VTherm_ controlling valves, the count reflects whether each valve is active. The valve settings, especially the opening threshold, therefore determine whether a valve is counted.
+
+> **Warning about the power threshold:** it is calculated from the power requested by the algorithm, independently of the valves' opening state. The requested power can be non-zero even when the configured opening thresholds mean that the valves are not considered active. This threshold is therefore not recommended for _VTherm_ controlling valves.
 
 You therefore have permanent access to the information that allows you to control and adjust the boiler activation.
 
@@ -37,7 +43,7 @@ In this example:
 
 ### Active power calculation
 The active power calculation depends on the _VTherm_ type:
-1. for all _VTherm_ based on [TPI](./algorithms.md#lalgorithme-tpi) the active power is [the power configured for the equipment](base-attributes.md#choix-des-attributs-de-base) x `on_percent` from the TPI algorithm. For all these _VTherm_ the power is therefore variable and evolves according to the heating power requested. Powers have no units, you can put whatever you want, the important thing is that all powers expressed in all _VTherm_ have the same unit.
+1. for all _VTherm_ based on [TPI](./algorithms.md#the-tpi-algorithm) the active power is [the power configured for the equipment](base-attributes.md#choix-des-attributs-de-base) x `on_percent` from the TPI algorithm. For all these _VTherm_ the power is therefore variable and evolves according to the heating power requested. Powers have no units, you can put whatever you want, the important thing is that all powers expressed in all _VTherm_ have the same unit.
 2. for `over_climate` _VTherm_ the calculated power is all or nothing. If the equipment is active (`is_device_ative`) then the power is that of the _VTherm_ otherwise it is zero. There is no way in this configuration to modulate the requested power.
 3.
 ## Configuration
@@ -51,6 +57,8 @@ On the next page, you can provide the configuration for the actions (e.g., servi
 
 The first parameter specifies a delay in seconds before activating the boiler. The default value is 0, meaning the boiler is activated immediately as soon as a threshold is crossed. If you need to allow time for the valves to open (for example), set a positive value in seconds. Some valves for underfloor heating systems may take several minutes to open, and it could be harmful to activate the boiler pump before the valves are fully open.
 
+The second parameter corresponds to the **keep-alive delay** in seconds. This parameter allows you to periodically resend the boiler activation command to ensure the boiler remains turned on. For example, if a boiler command is not properly received or if the boiler turns off on its own, the same command will be sent again at regular intervals. The default value is 0, which means keep-alive is disabled. If you want to enable this feature, set a positive value in seconds (for example, 60 to resend the command every minute). This parameter is optional and can be left at 0 if you don't need it.
+
 The actions (e.g., services) are configured as described on the page:
 1. The general format is `entity_id/service_id[/attribute:value]` (where `/attribute:value` is optional).
 2. `entity_id` is the name of the entity controlling the boiler in the form `domain.entity_name`. For example: `switch.chaudiere` for a boiler controlled by a switch, or `climate.chaudière` for a boiler controlled by a thermostat, or any other entity that allows boiler control (there is no limitation). You can also toggle inputs (`helpers`) such as `input_boolean` or `input_number`.
@@ -63,6 +71,16 @@ Examples (to adjust to your case):
 - `switch.pompe_chaudiere/switch.turn_on`: to turn on the switch powering the boiler pump.
 - `switch.pompe_chaudiere/switch.turn_off`: to turn off the switch powering the boiler pump.
 - ...
+
+### Using a template for the value
+The value (the part after `attribute:`) can be a Home Assistant template. The template is rendered every time the command is sent: on activation, on deactivation and on each keep-alive. The value can contain `/` and `:`.
+
+Example for a boiler driven by a room controller whose setpoint is relative to its own measured temperature:
+- activation: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) + 1 }}`
+- deactivation: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) - 2 }}`
+
+> **Tip**
+> Use `float(default)` so that the template never fails, and enable the keep-alive so that the setpoint follows the measured temperature. If a template cannot be rendered, the command is skipped and an error is logged. A template which does not compile is rejected when you validate the configuration.
 
 ### How to Find the Right Action?
 To find the correct action to use, it's best to go to "Developer Tools / Services", search for the action to call, the entity to control, and any required parameters.
@@ -92,20 +110,7 @@ An activation event:
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: true
-  entity_id: binary_sensor.central_boiler
-  name: Central boiler
-  state_attributes: null
-origin: LOCAL
-time_fired: "2024-01-14T11:33:52.342026+00:00"
-context:
-  id: 01HM3VZRJP3WYYWPNSDAFARW1T
-  parent_id: null
-  user_id: null
-```yaml
-event_type: versatile_thermostat_central_boiler_event
-data:
-  central_boiler: true
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Central boiler
   state_attributes: null
 origin: LOCAL
@@ -116,12 +121,12 @@ context:
   user_id: null
 ```
 
-Un évènement d'extinction :
+A deactivation event:
 ```yaml
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: false
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Central boiler
   state_attributes: null
 origin: LOCAL

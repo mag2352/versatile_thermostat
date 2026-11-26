@@ -2,8 +2,9 @@
 See: https://github.com/jmcollin78/versatile_thermostat/issues/1220 """
 
 import logging
+from vtherm_api.log_collector import get_vtherm_logger
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 class OpeningClosingDegreeCalculation:
@@ -55,10 +56,15 @@ class OpeningClosingDegreeCalculation:
         # if heating need is >= opening_threshold (and heating is > 0) -> open and calculate with interpolation,
         if bvop >= ot and bvop > 0:
             # interpolation is just here to normalize the max opening which can be != 100. Some TRV has a max which not 100
-            slope = (max_od - min_od) / (1 - ot)
-            calculated_degree = min_od + slope * (bvop - ot)
+            if ot >= 1:
+                calculated_degree = max_od
+            else:
+                slope = (max_od - min_od) / (1 - ot)
+                calculated_degree = min_od + slope * (bvop - ot)
         else:
             calculated_degree = 1 - max_cd
+
+        calculated_degree = max(calculated_degree, 1 - max_cd)
 
         # set to base 100
         calculated_degree = round(calculated_degree * 100)

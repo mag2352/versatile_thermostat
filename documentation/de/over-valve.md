@@ -6,13 +6,15 @@
 
 ## Voraussetzungen
 
+Die mit einem `over_valve`-_VTherm_ verwendbaren Thermostatventile, wie das [Shelly BLU TRV](https://www.versatile-thermostat.org/de/devices/over-valve/), sind im [Gerätekatalog](https://www.versatile-thermostat.org/de/devices/?type=trv) aufgeführt.
+
 Die Installation sollte ähnlich wie bei der VTherm-Einrichtung `over_switch` sein, mit dem Unterschied, dass das gesteuerte Gerät direkt das Ventil eines _TRV_ ist:
 
 ![Installation `over_valve`](images/over-valve-schema.png)
 
 1. Der Benutzer, die Automatisierung oder der Scheduler stellen einen Sollwert über eine Voreinstellung oder direkt über eine Temperatur ein.
 2. Das Innenthermometer (2) oder das Außenthermometer (2b) oder das Gerätenthermometer (2c) sendet in regelmäßigen Abständen die gemessene Temperatur. Das Innenthermometer sollte an einer für den Komfort des Benutzers geeigneten Stelle angebracht werden: idealerweise in der Mitte des Wohnraums. Vermeiden Sie es, es zu nahe an einem Fenster oder in der Nähe des Geräts zu platzieren.
-3. Ausgehend von den Sollwerten, den verschiedenen Temperaturen und den Parametern des TPI-Algorithmus (siehe [TPI](algorithms.md#lalgorithme-tpi)) berechnet VTherm den Öffnungsprozentsatz des Ventils.
+3. Ausgehend von den Sollwerten, den verschiedenen Temperaturen und den Parametern des TPI-Algorithmus (siehe [TPI](algorithms.md#der-tpi-algorithmus) oder die [weiteren Algorithmen](algorithms.md#weitere-algorithmen-plugins)) berechnet VTherm den Öffnungsprozentsatz des Ventils.
 4. Sie ändert dann den Wert der dazugehörigen `number`-Entities.
 5. Diese dazugehörigen `number`-Entities steuern die Öffnungsrate des Ventils vom _TRV_.
 6. Dadurch wird die Heizleistung des Heizkörpers reguliert.
@@ -22,10 +24,58 @@ Die Installation sollte ähnlich wie bei der VTherm-Einrichtung `over_switch` se
 ## Konfiguration
 
 Zuerst konfigurieren Sie die Haupteinstellungen, die für alle _VTherms_ gelten (siehe [Haupteinstellungen](base-attributes.md)).
-Dann klicken Sie auf die Option „Zugehörige Entities“ aus dem Menü, dann sehen Sie diese Konfigurationsseite, Sie sollten die `number`-Entities hinzufügen, die von VTherm kontrolliert werden. Es werden nur `number` oder `input_number` Entitäten akzeptiert.
+Dann klicken Sie auf die Option „Basiswerte“ aus dem Menü, dann sehen Sie diese Konfigurationsseite, Sie sollten die `number`-Entities hinzufügen, die von VTherm kontrolliert werden. Es werden nur `number` oder `input_number` Entitäten akzeptiert.
 
 ![image](images/config-linked-entity3.png)
 
-Der derzeit verfügbare Algorithmus ist TPI. Siehe [Algorithmus](#algorithm).
+Im Feld „Algorithmus“ wählen Sie den Regelalgorithmus: den integrierten TPI oder einen als Plugin installierten Algorithmus. Siehe [Algorithmen](algorithms.md).
+
+### Regelungsschwelle und Mindestzeitraum
+
+Zwei Felder begrenzen die Anzahl der an das Ventil gesendeten Befehle:
+1. **Regelungsschwelle** (Standard `10`): minimale Änderung der Öffnung in %, unterhalb derer keine neue Öffnung gesendet wird,
+2. **Mindestzeitraum Regelung** (Standard `5` Minuten): Mindestzeit zwischen zwei Berechnungen der Öffnung.
+
+### Steuerung der Ventilöffnung
+
+`over_valve` kann den TPI-Öffnungsbefehl an die physikalischen Grenzen jeder
+Ventil-Entität anpassen. Der `opening_threshold_degree` wird anhand des rohen
+TPI-Prozentsatzes ausgewertet. Liegt dieser darunter, lautet der Sollwert
+`100 - max_closing_degree`. Danach wird der Mindestöffnungsgrad angewendet und
+anschließend der Höchstöffnungsgrad. `opening_threshold_degree` und
+`max_closing_degree` gelten für den gesamten Thermostat. Mit den Standardwerten
+bleibt der gesendete Befehl identisch zum TPI-Rohwert.
+
+Der physische Befehl unterschreitet niemals `100 - max_closing_degree`, auch
+nicht wenn die rohe TPI-Anforderung `opening_threshold_degree` erreicht, und
+nimmt bei steigender Anforderung nicht ab. Die Heizanforderung wird anhand des
+positiven rohen TPI-Prozentsatzes am oder über dem Schwellenwert bestimmt; das
+beobachtete Ventil ist nur oberhalb seines wirksamen physischen Minimums aktiv,
+das auch durch das Entity-Minimum begrenzt wird. Beim Start oder Neuladen kehrt
+ein Ventil ohne Anforderung zu diesem Minimum zurück.
+
+`min_opening_degrees` und `max_opening_degrees` sind durch Kommata getrennte
+Listen in der Reihenfolge der untergeordneten Ventile. Unvollständige Listen
+sind zulässig: fehlende Werte verwenden die Standardwerte. Listen mit mehr
+Werten als konfigurierte Ventile werden abgelehnt.
 
 Es ist möglich, einen `Thermostat_over_valve` zur Steuerung einer Klimaanlage zu wählen, indem man das Kästchen "AC Mode" aktiviert. In diesem Fall wird nur der Kühlmodus angezeigt.
+
+### Ruhemodus
+
+> [!NOTE]
+> Der Ruhemodus (`sleep` / `Zzz`) erfordert eine mit Versatile Thermostat kompatible Karte, etwa die [Versatile Thermostat UI Card](additions.md#die-versatile-thermostat-ui-card). Die Standard-Thermostatkarte (Climate) von Home Assistant wird nicht unterstützt: sie listet `sleep` in `hvac_modes` auf, kann ihn aber nicht auswählen (`climate.set_hvac_mode` lehnt `sleep` ab, da es kein Standard-`HVACMode` von HA ist). Um den Ruhemodus zu aktivieren, verwenden Sie die Schaltfläche `Zzz` der VTherm UI Card oder rufen Sie die Aktion `versatile_thermostat.set_hvac_mode_sleep` auf.
+
+`over_valve` unterstützt den Ruhemodus. Die Auswahl von `sleep` oder der Aufruf
+der Aktion `versatile_thermostat.set_hvac_mode_sleep` zeigt VTherm als
+ausgeschaltet an und sendet gleichzeitig eine rohe Öffnungsanforderung von 100 %
+an jedes untergeordnete Ventil. Die normale Umrechnung der Öffnungssteuerung
+bleibt erhalten: `max_opening_degrees` und die Grenzen der `number`-Entity
+können die physische Öffnung begrenzen. Der Ruhemodus fordert keine zentrale
+Kesselheizung an; das Attribut `is_sleeping` kennzeichnet diesen Zustand.
+
+## Nächster Schritt
+
+[Die TPI-Koeffizienten](algorithms.md#konfigurieren-der-tpi-algorithmusfaktoren): den Regelalgorithmus einstellen (Menü „TPI-Parameter“). Ohne zentrale Konfiguration ist dieser Schritt erforderlich, um die Erstellung abzuschließen.
+
+Wenn Sie einen Algorithmus aus einem Plugin verwenden, etwa SmartPI, folgen Sie dessen Dokumentation und gehen Sie dann direkt zu den [Voreinstellungen](feature-presets.md).

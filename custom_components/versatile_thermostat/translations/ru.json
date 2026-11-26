@@ -29,9 +29,11 @@
           "advanced": "Расширенные параметры",
           "auto_start_stop": "Авто старт и стоп",
           "valve_regulation": "Конфигурация регулировки клапана",
+          "sync_device_internal_temp": "Синхронизация температуры устройства",
           "lock": "Управление блокировкой",
           "finalize": "Все готово",
-          "configuration_not_complete": "Конфигурация не завершена"
+          "configuration_not_complete": "Конфигурация не завершена",
+          "heating_failure_detection": "Обнаружение сбоев отопления"
         }
       },
       "lock": {
@@ -49,7 +51,7 @@
       },
       "main": {
         "title": "Добавить новый универсальный термостат",
-        "description": "Основные обязательные атрибуты&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/base-attributes.md)",
+        "description": "Основные обязательные атрибуты",
         "data": {
           "name": "Название",
           "thermostat_type": "Тип термостата",
@@ -61,14 +63,20 @@
           "temp_max": "Максимальная допустимая температура",
           "step_temperature": "Шаг температуры",
           "device_power": "Мощность устройства",
+          "power_unit": "Единица мощности (для мощности устройства)",
           "use_central_mode": "Включить управление через центральную сущность (требует центральной конфигурации). Отметьте для управления VTherm через сущности центральной конфигурации.",
           "use_main_central_config": "Использовать дополнительную центральную конфигурацию. Отметьте для использования центральной конфигурации (уличная температура, мин, макс, шаг, ...).",
           "used_by_controls_central_boiler": "Используется центральным котлом. Отметьте, если этот VTherm должен управлять центральным котлом"
         },
         "data_description": {
+          "cycle_min": "Минимальная длительность одного цикла обогрева/охлаждения в минутах, чтобы избежать слишком частого переключения",
+          "temp_min": "Минимальная допустимая температура для термостата",
+          "temp_max": "Максимальная допустимая температура для термостата",
+          "step_temperature": "Шаг температуры для установки целевой температуры",
           "temperature_sensor_entity_id": "ID датчика температуры в помещении",
           "last_seen_temperature_sensor_entity_id": "ID датчика времени последнего измерения температуры. Должен быть датчиком datetime",
-          "external_temperature_sensor_entity_id": "ID датчика уличной температуры. Не используется, если выбрана центральная конфигурация"
+          "external_temperature_sensor_entity_id": "ID датчика уличной температуры. Не используется, если выбрана центральная конфигурация",
+          "power_unit": "Единица потребления мощности устройства"
         }
       },
       "features": {
@@ -80,20 +88,26 @@
           "use_power_feature": "Использовать управление питанием",
           "use_presence_feature": "Использовать обнаружение присутствия",
           "use_central_boiler_feature": "Использовать центральный котел. Отметьте для добавления управления вашим центральным котлом. После выбора этой опции вам нужно будет настроить VTherm, который будет управлять центральным котлом. Если один VTherm требует обогрев, котел включится. Если ни один VTherm не требует обогрев, котел выключится. Команды для включения/выключения центрального котла задаются на соответствующей странице конфигурации",
-          "use_auto_start_stop_feature": "Использовать функцию авто старта и остановки"
+          "use_auto_start_stop_feature": "Использовать функцию авто старта и остановки",
+          "use_heating_failure_detection_feature": "Использовать обнаружение сбоев отопления"
         }
       },
       "type": {
         "title": "Связанные сущности",
-        "description": "Атрибуты связанных сущностей&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/over-switch.md#configuration)",
+        "description": "Атрибуты связанных сущностей",
         "data": {
           "underlying_entity_ids": "Устройство(а) для управления",
           "heater_keep_alive": "Интервал поддержания переключателя (секунды)",
           "proportional_function": "Алгоритм",
           "ac_mode": "Режим кондиционера",
+          "sync_device_internal_temp": "Синхронизация внутренней температуры устройства",
           "auto_regulation_mode": "Саморегулирование",
           "auto_regulation_dtemp": "Порог регулирования",
           "auto_regulation_periode_min": "Минимальный период регулирования",
+          "opening_threshold_degree": "Пороговое значение открытия",
+          "min_opening_degrees": "Минимальные степени открытия",
+          "max_opening_degrees": "Максимальная степень открытия",
+          "max_closing_degree": "Максимальная степень закрытия",
           "auto_regulation_use_device_temp": "Использовать внутреннюю температуру устройства",
           "inverse_switch_command": "Инвертировать команду переключателя",
           "auto_fan_mode": "Авто режим вентилятора",
@@ -105,12 +119,17 @@
         "data_description": {
           "underlying_entity_ids": "Устройство(а) для управления - требуется 1",
           "heater_keep_alive": "Опциональный интервал обновления состояния переключателя. Оставьте пустым, если не требуется.",
-          "proportional_function": "Алгоритм для использования (TPI пока единственный)",
+          "proportional_function": "Алгоритм для использования (другие алгоритмы можно установить как {plugins_link})",
           "ac_mode": "Использовать режим кондиционера (AC)",
+          "sync_device_internal_temp": "Конфигурация для синхронизации внутренней температуры подчиненных устройств с выбранными сущностями",
           "auto_regulation_mode": "Автоматическая корректировка целевой температуры",
           "auto_regulation_dtemp": "Порог в ° (или % для клапана), ниже которого изменение температуры не будет отправлено",
           "auto_regulation_periode_min": "Время в минутах между двумя обновлениями регулирования",
-          "auto_regulation_use_device_temp": "Использовать внутренний датчик температуры устройства для ускорения саморегулирования",
+          "opening_threshold_degree": "Значение открытия клапана, ниже которого клапан должен считаться закрытым (и тогда будет применено 'max_closing_degree')",
+          "min_opening_degrees": "Минимальное значение степени открытия для каждого управляющего устройства, через запятую. По умолчанию 0. Пример: 20, 25, 30",
+          "max_opening_degrees": "Максимальное значение степени открытия для каждого базового устройства, через запятую. По умолчанию 100. Клапан никогда не откроется больше этого значения. Пример: 80, 85, 90",
+          "max_closing_degree": "Максимальное значение степени закрытия. Клапан никогда не закроется больше этого значения. Установите на 100, чтобы полностью закрыть клапан",
+          "auto_regulation_use_device_temp": "Использовать внутренний датчик температуры устройства для ускорения саморегулирования (в большинстве случаев не требуется)",
           "inverse_switch_command": "Для переключателей с пилотным проводом и диодом может потребоваться инвертировать команду",
           "auto_fan_mode": "Автоматически активировать вентилятор при необходимости сильного обогрева/охлаждения",
           "on_command_text": "Для устройств типа `select` или `climate` необходимо настроить команды."
@@ -118,7 +137,7 @@
       },
       "tpi": {
         "title": "TPI",
-        "description": "Атрибуты Time Proportional Integral&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/algorithms.md#lalgorithme-tpi)",
+        "description": "Атрибуты Time Proportional Integral",
         "data": {
           "tpi_coef_int": "coef_int",
           "tpi_coef_ext": "coef_ext",
@@ -140,14 +159,14 @@
       },
       "presets": {
         "title": "Предустановки",
-        "description": "Выберите, будет ли термостат использовать центральные предустановки - снимите для использования собственных предустановок термостата&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-presets.md)",
+        "description": "Выберите, будет ли термостат использовать центральные предустановки - снимите для использования собственных предустановок термостата",
         "data": {
           "use_presets_central_config": "Использовать центральную конфигурацию предустановок"
         }
       },
       "window": {
         "title": "Управление окнами",
-        "description": "Управление открытыми окнами.\nВы также можете настроить автоматическое обнаружение открытых окон на основе снижения температуры&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-window.md)",
+        "description": "Управление открытыми окнами.\nВы также можете настроить автоматическое обнаружение открытых окон на основе снижения температуры",
         "data": {
           "window_sensor_entity_id": "ID датчика окна",
           "window_delay": "Задержка датчика 'включено' (секунды)",
@@ -171,7 +190,7 @@
       },
       "motion": {
         "title": "Управление движением",
-        "description": "Управление датчиком движения. Предустановка может автоматически переключаться в зависимости от обнаружения движения\nmotion_preset и no_motion_preset должны быть установлены в соответствующие имена предустановок&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-motion.md)",
+        "description": "Управление датчиком движения. Предустановка может автоматически переключаться в зависимости от обнаружения движения\nmotion_preset и no_motion_preset должны быть установлены в соответствующие имена предустановок",
         "data": {
           "motion_sensor_entity_id": "ID датчика движения",
           "motion_delay": "Задержка активации",
@@ -191,23 +210,25 @@
       },
       "power": {
         "title": "Управление питанием",
-        "description": "Атрибуты управления питанием.\nУказывает датчики мощности и максимальной мощности вашего дома.\nУкажите потребляемую мощность обогревателя при включении.\nВсе датчики и мощность устройства должны использовать одинаковые единицы измерения (кВт или Вт)&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-power.md)",
+        "description": "Атрибуты управления мощностью.\nВыберите Вт или кВт для мощности устройства каждого VTherm, а для центральной конфигурации — Вт, кВт или Авто.\nЗначения нормализуются внутри системы, поэтому Вт и кВт можно безопасно комбинировать.",
         "data": {
           "power_sensor_entity_id": "Мощность",
           "max_power_sensor_entity_id": "Максимальная мощность",
+          "power_unit": "Центральная единица мощности",
           "power_temp": "Температура снижения мощности",
           "use_power_central_config": "Использовать центральную конфигурацию питания"
         },
         "data_description": {
           "power_sensor_entity_id": "ID датчика мощности",
           "max_power_sensor_entity_id": "ID датчика максимальной мощности",
+          "power_unit": "Выберите единицу мощности или Автоматически для автоматического обнаружения из датчика",
           "power_temp": "Температура для снижения мощности",
           "use_power_central_config": "Отметьте для использования центральной конфигурации питания. Снимите для использования специфичной конфигурации питания для этого VTherm"
         }
       },
       "presence": {
         "title": "Управление присутствием",
-        "description": "Атрибуты управления присутствием.\nУказывает датчик присутствия в вашем доме (true если кто-то присутствует) и соответствующую настройку температурной предустановки&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-presence.md)",
+        "description": "Атрибуты управления присутствием.\nУказывает датчик присутствия в вашем доме (true если кто-то присутствует) и соответствующую настройку температурной предустановки",
         "data": {
           "presence_sensor_entity_id": "Датчик присутствия",
           "use_presence_central_config": "Использовать центральную конфигурацию температуры присутствия. Снимите для использования специфичных температурных сущностей"
@@ -218,50 +239,104 @@
       },
       "advanced": {
         "title": "Расширенные параметры",
-        "description": "Конфигурация расширенных параметров. Оставьте значения по умолчанию, если не уверены в своих действиях.\nЭти параметры могут привести к очень плохому контролю температуры или плохому регулированию мощности&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-advanced.md)",
+        "description": "Конфигурация расширенных параметров. Оставьте значения по умолчанию, если не уверены в своих действиях.\nЭти параметры могут привести к очень плохому контролю температуры или плохому регулированию мощности",
         "data": {
           "safety_delay_min": "Защитная задержка (в минутах)",
           "safety_min_on_percent": "Минимальный процент мощности для включения защитного режима",
           "safety_default_on_percent": "Процент мощности для использования в защитном режиме",
+          "repair_incorrect_state": "Исправить неправильное состояние",
+          "manual_override_duration_min": "Длительность ручного изменения (мин)",
           "use_advanced_central_config": "Использовать центральную расширенную конфигурацию"
         },
         "data_description": {
           "safety_delay_min": "Максимально допустимая задержка в минутах между двумя измерениями температуры. Выше этой задержки термостат перейдет в защитный режим выключения",
           "safety_min_on_percent": "Минимальное значение процента нагрева для активации защитной предустановки. Ниже этого значения процента мощности термостат не перейдет в защитную предустановку",
           "safety_default_on_percent": "Значение процента мощности нагрева по умолчанию в защитной предустановке. Установите 0 для выключения обогревателя в защитной предустановке",
+          "repair_incorrect_state": "Автоматически исправить неправильное состояние базовых объектов при обнаружении. Функция повторно отправит желаемую команду, если состояние базового устройства не соответствует ожидаемому состоянию.",
+          "manual_override_duration_min": "После ручного изменения температуры VTherm возвращается к предыдущему пресету через это время (в минутах). 0 отключает функцию.",
           "use_advanced_central_config": "Отметьте для использования центральной расширенной конфигурации. Снимите для использования специфичной расширенной конфигурации для этого VTherm"
         }
       },
       "central_boiler": {
         "title": "Управление центральным котлом",
-        "description": "Введите сервисы для вызова включения/выключения центрального котла. Вызываемый сервис должен быть отформатирован следующим образом: `entity_id/service_name[/attribute:value]` (/attribute:value опционально)\nНапример:\n- для включения переключателя: `switch.controle_chaudiere/switch.turn_on`\n- для выключения переключателя: `switch.controle_chaudiere/switch.turn_off`\n- для программирования котла на 25° и принудительного включения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:25`\n- для отправки 10° котлу и принудительного выключения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:10`&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/fr/feature-central-boiler.md)",
+        "description": "Введите сервисы для вызова включения/выключения центрального котла. Вызываемый сервис должен быть отформатирован следующим образом: `entity_id/service_name[/attribute:value]` (/attribute:value опционально)\nНапример:\n- для включения переключателя: `switch.controle_chaudiere/switch.turn_on`\n- для выключения переключателя: `switch.controle_chaudiere/switch.turn_off`\n- для программирования котла на 25° и принудительного включения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:25`\n- для отправки 10° котлу и принудительного выключения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:10`",
         "data": {
           "central_boiler_activation_service": "Команда включения",
           "central_boiler_deactivation_service": "Команда выключения",
-          "central_boiler_activation_delay_sec": "Задержка включения (в секундах)"
+          "central_boiler_activation_delay_sec": "Задержка включения (в секундах)",
+          "keep_alive_boiler_delay_sec": "Задержка keep-alive (секунды)"
         },
         "data_description": {
           "central_boiler_activation_service": "Команда включения центрального котла в формате entity_id/service_name[/attribut:valeur]",
           "central_boiler_deactivation_service": "Команда выключения центрального котла в формате entity_id/service_name[/attribut:valeur]",
-          "central_boiler_activation_delay_sec": "Задержка включения (в секундах) перед включением центрального котла после того, как VTherm запросил включение"
+          "central_boiler_activation_delay_sec": "Задержка включения (в секундах) перед включением центрального котла после того, как VTherm запросил включение",
+          "keep_alive_boiler_delay_sec": "Задержка в секундах для периодической повторной отправки команды котла, если keep-alive включен. Установите 0, чтобы отключить keep-alive."
         }
       },
       "valve_regulation": {
         "title": "Саморегулирование с клапаном",
-        "description": "Конфигурация для саморегулирования с прямым управлением клапаном&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/fr/self-regulation.md#auto-régulation-par-contrôle-direct-de-la-vanne)",
+        "description": "Конфигурация для саморегулирования с прямым управлением клапаном",
         "data": {
           "offset_calibration_entity_ids": "Сущности калибровки смещения",
           "opening_degree_entity_ids": "Сущности степени открытия",
           "closing_degree_entity_ids": "Сущности степени закрытия",
           "proportional_function": "Алгоритм",
-          "min_opening_degrees": "Минимальные степени открытия"
+          "opening_threshold_degree": "Пороговое значение открытия",
+          "min_opening_degrees": "Минимальные степени открытия",
+          "max_opening_degrees": "Максимальная степень открытия",
+          "max_closing_degree": "Максимальная степень закрытия"
         },
         "data_description": {
           "offset_calibration_entity_ids": "Список сущностей 'калибровки смещения'. Установите, если ваш TRV имеет такую сущность для лучшего регулирования. Должна быть одна для каждой управляющей климатической сущности",
           "opening_degree_entity_ids": "Список сущностей 'степени открытия'. Должна быть одна для каждой управляющей климатической сущности",
           "closing_degree_entity_ids": "Список сущностей 'степени закрытия'. Установите, если ваш TRV имеет такую сущность для лучшего регулирования. Должна быть одна для каждой управляющей климатической сущности",
-          "proportional_function": "Алгоритм для использования (TPI пока единственный)",
-          "min_opening_degrees": "Минимальное значение степени открытия для каждого управляющего устройства, через запятую. По умолчанию 0. Пример: 20, 25, 30"
+          "proportional_function": "Алгоритм для использования (другие алгоритмы можно установить как {plugins_link})",
+          "opening_threshold_degree": "Значение открытия клапана, ниже которого клапан должен считаться закрытым (и тогда будет применено 'max_closing_degree')",
+          "min_opening_degrees": "Минимальное значение степени открытия для каждого управляющего устройства, через запятую. По умолчанию 0. Пример: 20, 25, 30",
+          "max_opening_degrees": "Максимальное значение степени открытия для каждого базового устройства, через запятую. По умолчанию 100. Клапан никогда не откроется больше этого значения. Пример: 80, 85, 90",
+          "max_closing_degree": "Максимальное значение степени закрытия. Клапан никогда не закроется больше этого значения. Установите на 100, чтобы полностью закрыть клапан"
+        }
+      },
+      "sync_device_internal_temp": {
+        "title": "Synchronize device internal temperature",
+        "description": "Configuration to synchronize the internal temperature of the underlying devices with selected entities",
+        "data": {
+          "sync_with_calibration": "Apply offset calibration",
+          "sync_entity_ids": "Entities id used for synchronization"
+        },
+        "data_description": {
+          "sync_with_calibration": "Check to apply the offset calibration when synchronizing the internal temperature. Uncheck to directly copy the temperature from the selected entities",
+          "sync_entity_ids": "The list of the entities used to synchronize the internal temperature of the underlying devices. There should be one per underlying device. Should be a calibration entity if checkbox is selected or a temperature entity otherwise. Both are `number` entities."
+        }
+      },
+      "auto_tpi_configuration": {
+        "data": {
+          "auto_tpi_cooling_rate": "Скорость охлаждения ({unit}/ч)"
+        },
+        "data_description": {
+          "auto_tpi_cooling_rate": "Способность радиатора к охлаждению ({unit} в час). Оставьте 0 для автоматического обучения (bootstrap)."
+        }
+      },
+      "heating_failure_detection": {
+        "title": "Обнаружение сбоев отопления",
+        "description": "Настройка функции обнаружения сбоев отопления. Обнаруживает аномалии, когда ожидается нагрев, но температура не повышается, или когда отопление выключено, но температура продолжает расти.",
+        "data": {
+          "use_heating_failure_detection_feature": "Включить обнаружение сбоев отопления",
+          "use_heating_failure_detection_central_config": "Использовать центральную конфигурацию обнаружения сбоев",
+          "heating_failure_threshold": "Порог сбоя отопления",
+          "cooling_failure_threshold": "Порог сбоя охлаждения",
+          "heating_failure_detection_delay": "Задержка обнаружения (минуты)",
+          "temperature_change_tolerance": "Допуск изменения температуры (°C)",
+          "failure_detection_enable_template": "Шаблон включения обнаружения"
+        },
+        "data_description": {
+          "use_heating_failure_detection_feature": "Включить обнаружение аномалий отопления для VTherm с TPI",
+          "use_heating_failure_detection_central_config": "Отметьте для использования центральной конфигурации обнаружения сбоев. Снимите отметку для использования специфических параметров для этого VTherm",
+          "heating_failure_threshold": "Пороговый процент включения, выше которого отопление должно вызывать повышение температуры (0.9 = 90%)",
+          "cooling_failure_threshold": "Пороговый процент включения, ниже которого температура не должна повышаться (0.0 = 0%)",
+          "heating_failure_detection_delay": "Время в минутах ожидания перед проверкой, изменилась ли температура как ожидалось",
+          "temperature_change_tolerance": "Минимальное изменение температуры в градусах, считающееся значительным. Меньшие изменения игнорируются для фильтрации шума датчика (по умолчанию: 0.5°C)",
+          "failure_detection_enable_template": "Необязательный шаблон Jinja2, который должен вернуть True для включения обнаружения. Полезно для временного отключения обнаружения при активном внешнем источнике тепла (например, `is_state('binary_sensor.wood_stove', 'off')` в двойных фигурных скобках). Если пусто, обнаружение всегда включено."
         }
       }
     },
@@ -269,7 +344,15 @@
       "unknown": "Неожиданная ошибка",
       "unknown_entity": "Неизвестный ID сущности",
       "window_open_detection_method": "Должен использоваться только один метод обнаружения открытых окон. Используйте либо датчик окна, либо автоматическое обнаружение через температурный порог, но не оба одновременно",
-      "no_central_config": "Вы не можете выбрать 'использовать центральную конфигурацию', потому что центральная конфигурация не найдена. Вам нужно создать универсальный термостат типа 'Центральная конфигурация' для его использования."
+      "no_central_config": "Вы не можете выбрать 'использовать центральную конфигурацию', потому что центральная конфигурация не найдена. Вам нужно создать универсальный термостат типа 'Центральная конфигурация' для его использования.",
+      "service_configuration_format": "Неверный формат конфигурации сервиса",
+      "valve_regulation_nb_entities_incorrect": "Количество сущностей клапана для регулирования клапана должно быть равно количеству управляющих устройств",
+      "sync_device_internal_temp_nb_entities_incorrect": "Количество сущностей для синхронизации внутренней температуры устройства должно быть равно количеству управляющих устройств",
+      "min_opening_degrees_format": "Ожидается список положительных целых чисел, разделенных запятыми. Пример: 20, 25, 30",
+      "max_opening_degrees_format": "Ожидается список положительных целых чисел от 0 до 100, разделенных запятыми. Пример: 80, 85, 90",
+      "min_max_opening_degrees_inconsistent": "Для каждого базового устройства max_opening_degrees должен быть строго больше min_opening_degrees. Проверьте вашу конфигурацию.",
+      "valve_control_parameters_cardinality_incorrect": "Списки минимальной и максимальной степени открытия не могут содержать больше значений, чем настроенных клапанов",
+      "vswitch_configuration_incorrect": "Неверная конфигурация настройки команды. Она обязательна для базовых объектов, которые не являются переключателями, и формат должен быть service_name[/attribute:value]. Дополнительная информация доступна в README"
     },
     "abort": {
       "already_configured": "Устройство уже настроено"
@@ -304,9 +387,11 @@
           "advanced": "Расширенные параметры",
           "auto_start_stop": "Авто старт и стоп",
           "valve_regulation": "Конфигурация регулировки клапана",
+          "sync_device_internal_temp": "Синхронизация температуры устройства",
           "lock": "Управление блокировкой",
           "finalize": "Все готово",
-          "configuration_not_complete": "Конфигурация не завершена"
+          "configuration_not_complete": "Конфигурация не завершена",
+          "heating_failure_detection": "Обнаружение сбоев отопления"
         }
       },
       "lock": {
@@ -324,7 +409,7 @@
       },
       "main": {
         "title": "Основные - {name}",
-        "description": "Основные обязательные атрибуты&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/base-attributes.md)",
+        "description": "Основные обязательные атрибуты",
         "data": {
           "name": "Название",
           "thermostat_type": "Тип термостата",
@@ -341,6 +426,10 @@
           "used_by_controls_central_boiler": "Используется центральным котлом. Отметьте, если этот VTherm должен управлять центральным котлом"
         },
         "data_description": {
+          "cycle_min": "Минимальная длительность одного цикла обогрева/охлаждения в минутах, чтобы избежать слишком частого переключения",
+          "temp_min": "Минимальная допустимая температура для термостата",
+          "temp_max": "Максимальная допустимая температура для термостата",
+          "step_temperature": "Шаг температуры для установки целевой температуры",
           "temperature_sensor_entity_id": "ID датчика температуры в помещении",
           "last_seen_temperature_sensor_entity_id": "ID датчика времени последнего измерения температуры. Должен быть датчиком datetime",
           "external_temperature_sensor_entity_id": "ID датчика уличной температуры. Не используется, если выбрана центральная конфигурация"
@@ -355,17 +444,19 @@
           "use_power_feature": "Использовать управление питанием",
           "use_presence_feature": "Использовать обнаружение присутствия",
           "use_central_boiler_feature": "Использовать центральный котел. Отметьте для добавления управления вашим центральным котлом. После выбора этой опции вам нужно будет настроить VTherm, который будет управлять центральным котлом. Если один VTherm требует обогрев, котел включится. Если ни один VTherm не требует обогрев, котел выключится. Команды для включения/выключения центрального котла задаются на соответствующей странице конфигурации",
-          "use_auto_start_stop_feature": "Использовать функцию авто старта и остановки"
+          "use_auto_start_stop_feature": "Использовать функцию авто старта и остановки",
+          "use_heating_failure_detection_feature": "Использовать обнаружение сбоев отопления"
         }
       },
       "type": {
         "title": "Сущности - {name}",
-        "description": "Атрибуты связанных сущностей&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/over-switch.md#configuration)",
+        "description": "Атрибуты связанных сущностей",
         "data": {
           "underlying_entity_ids": "Устройство(а) для управления",
           "heater_keep_alive": "Интервал поддержания переключателя (секунды)",
           "proportional_function": "Алгоритм",
           "ac_mode": "Режим кондиционера",
+          "sync_device_internal_temp": "Синхронизация внутренней температуры устройства",
           "auto_regulation_mode": "Саморегулирование",
           "auto_regulation_dtemp": "Порог регулирования",
           "auto_regulation_periode_min": "Минимальный период регулирования",
@@ -375,25 +466,34 @@
           "on_command_text": "Настройка команды включения",
           "vswitch_on_command": "Опциональные команды включения",
           "off_command_text": "Настройка команды выключения",
-          "vswitch_off_command": "Опциональные команды выключения"
+          "vswitch_off_command": "Опциональные команды выключения",
+          "opening_threshold_degree": "Пороговое значение открытия",
+          "min_opening_degrees": "Минимальные степени открытия",
+          "max_opening_degrees": "Максимальная степень открытия",
+          "max_closing_degree": "Максимальная степень закрытия"
         },
         "data_description": {
           "underlying_entity_ids": "Устройство(а) для управления - требуется 1",
           "heater_keep_alive": "Опциональный интервал обновления состояния переключателя. Оставьте пустым, если не требуется.",
-          "proportional_function": "Алгоритм для использования (TPI пока единственный)",
+          "proportional_function": "Алгоритм для использования (другие алгоритмы можно установить как {plugins_link})",
           "ac_mode": "Использовать режим кондиционера (AC)",
+          "sync_device_internal_temp": "Конфигурация для синхронизации внутренней температуры подчиненных устройств с выбранными сущностями",
           "auto_regulation_mode": "Автоматическая корректировка целевой температуры",
           "auto_regulation_dtemp": "Порог в ° (или % для клапана), ниже которого изменение температуры не будет отправлено",
           "auto_regulation_periode_min": "Время в минутах между двумя обновлениями регулирования",
-          "auto_regulation_use_device_temp": "Использовать внутренний датчик температуры устройства для ускорения саморегулирования",
+          "auto_regulation_use_device_temp": "Использовать внутренний датчик температуры устройства для ускорения саморегулирования (в большинстве случаев не требуется)",
           "inverse_switch_command": "Для переключателей с пилотным проводом и диодом может потребоваться инвертировать команду",
           "auto_fan_mode": "Автоматически активировать вентилятор при необходимости сильного обогрева/охлаждения",
-          "on_command_text": "Для устройств типа `select` или `climate` необходимо настроить команды."
+          "on_command_text": "Для устройств типа `select` или `climate` необходимо настроить команды.",
+          "opening_threshold_degree": "Значение открытия клапана, ниже которого клапан должен считаться закрытым (и тогда будет применено 'max_closing_degree')",
+          "min_opening_degrees": "Минимальное значение степени открытия для каждого управляющего устройства, через запятую. По умолчанию 0. Пример: 20, 25, 30",
+          "max_opening_degrees": "Максимальное значение степени открытия для каждого базового устройства, через запятую. По умолчанию 100. Клапан никогда не откроется больше этого значения. Пример: 80, 85, 90",
+          "max_closing_degree": "Максимальное значение степени закрытия. Клапан никогда не закроется больше этого значения. Установите на 100, чтобы полностью закрыть клапан"
         }
       },
       "tpi": {
         "title": "TPI - {name}",
-        "description": "Атрибуты Time Proportional Integral&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/algorithms.md#lalgorithme-tpi)",
+        "description": "Атрибуты Time Proportional Integral",
         "data": {
           "tpi_coef_int": "coef_int",
           "tpi_coef_ext": "coef_ext",
@@ -415,14 +515,14 @@
       },
       "presets": {
         "title": "Предустановки - {name}",
-        "description": "Отметьте, если термостат будет использовать центральные предустановки. Снимите и термостат будет иметь собственные сущности предустановок&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-presets.md)",
+        "description": "Отметьте, если термостат будет использовать центральные предустановки. Снимите и термостат будет иметь собственные сущности предустановок",
         "data": {
           "use_presets_central_config": "Использовать центральную конфигурацию предустановок"
         }
       },
       "window": {
         "title": "Окна - {name}",
-        "description": "Управление открытыми окнами.\nВы также можете настроить автоматическое обнаружение открытых окон на основе снижения температуры&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-window.md)",
+        "description": "Управление открытыми окнами.\nВы также можете настроить автоматическое обнаружение открытых окон на основе снижения температуры",
         "data": {
           "window_sensor_entity_id": "ID датчика окна",
           "window_delay": "Задержка датчика 'включено' (секунды)",
@@ -445,7 +545,7 @@
       },
       "motion": {
         "title": "Движение - {name}",
-        "description": "Управление движением. Предустановка может автоматически переключаться в зависимости от обнаружения движения\nmotion_preset и no_motion_preset должны быть установлены в соответствующие имена предустановок&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-motion.md)",
+        "description": "Управление движением. Предустановка может автоматически переключаться в зависимости от обнаружения движения\nmotion_preset и no_motion_preset должны быть установлены в соответствующие имена предустановок",
         "data": {
           "motion_sensor_entity_id": "ID датчика движения",
           "motion_delay": "Задержка активации",
@@ -465,7 +565,7 @@
       },
       "power": {
         "title": "Питание - {name}",
-        "description": "Атрибуты управления питанием.\nУказывает датчики мощности и максимальной мощности вашего дома.\nУкажите потребляемую мощность обогревателя при включении.\nВсе датчики и мощность устройства должны использовать одинаковые единицы измерения (кВт или Вт)&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-power.md)",
+        "description": "Атрибуты управления питанием.\nУказывает датчики мощности и максимальной мощности вашего дома.\nУкажите потребляемую мощность обогревателя при включении.\nВсе датчики и мощность устройства должны использовать одинаковые единицы измерения (кВт или Вт)",
         "data": {
           "power_sensor_entity_id": "Мощность",
           "max_power_sensor_entity_id": "Максимальная мощность",
@@ -481,7 +581,7 @@
       },
       "presence": {
         "title": "Присутствие - {name}",
-        "description": "Атрибуты управления присутствием.\nУказывает датчик присутствия в вашем доме (true если кто-то присутствует) и соответствующую настройку температурной предустановки&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-presence.md)",
+        "description": "Атрибуты управления присутствием.\nУказывает датчик присутствия в вашем доме (true если кто-то присутствует) и соответствующую настройку температурной предустановки",
         "data": {
           "presence_sensor_entity_id": "Датчик присутствия",
           "use_presence_central_config": "Использовать центральную конфигурацию температуры присутствия. Снимите для использования специфичных температурных сущностей"
@@ -492,13 +592,15 @@
       },
       "advanced": {
         "title": "Расширенные - {name}",
-        "description": "Конфигурация расширенных параметров. Оставьте значения по умолчанию, если не уверены в своих действиях.\nЭти параметры могут привести к очень плохому контролю температуры или плохому регулированию мощности&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/en/feature-advanced.md)",
+        "description": "Конфигурация расширенных параметров. Оставьте значения по умолчанию, если не уверены в своих действиях.\nЭти параметры могут привести к очень плохому контролю температуры или плохому регулированию мощности",
         "data": {
           "minimal_activation_delay": "Минимальная задержка активации",
           "minimal_deactivation_delay": "Минимальная задержка деактивации",
           "safety_delay_min": "Защитная задержка (в минутах)",
           "safety_min_on_percent": "Минимальный процент мощности для включения защитного режима",
           "safety_default_on_percent": "Процент мощности для использования в защитном режиме",
+          "repair_incorrect_state": "Исправлять неправильное состояние",
+          "manual_override_duration_min": "Длительность ручного изменения (мин)",
           "use_advanced_central_config": "Использовать центральную расширенную конфигурацию"
         },
         "data_description": {
@@ -507,39 +609,91 @@
           "safety_delay_min": "Максимально допустимая задержка в минутах между двумя измерениями температуры. Выше этой задержки термостат перейдет в защитный режим выключения",
           "safety_min_on_percent": "Минимальное значение процента нагрева для активации защитной предустановки. Ниже этого значения процента мощности термостат не перейдет в защитную предустановку",
           "safety_default_on_percent": "Значение процента мощности нагрева по умолчанию в защитной предустановке. Установите 0 для выключения обогревателя в защитной предустановке",
+          "repair_incorrect_state": "Автоматически исправлять неправильное состояние базовых сущностей при обнаружении. Функция повторно отправляет желаемую команду, если состояние базового устройства не совпадает с ожидаемым состоянием.",
+          "manual_override_duration_min": "После ручного изменения температуры VTherm возвращается к предыдущему пресету через это время (в минутах). 0 отключает функцию.",
           "use_advanced_central_config": "Отметьте для использования центральной расширенной конфигурации. Снимите для использования специфичной расширенной конфигурации для этого VTherm"
         }
       },
       "central_boiler": {
         "title": "Управление центральным котлом - {name}",
-        "description": "Введите сервисы для вызова включения/выключения центрального котла. Вызываемый сервис должен быть отформатирован следующим образом: `entity_id/service_name[/attribute:value]` (/attribute:value опционально)\nНапример:\n- для включения переключателя: `switch.controle_chaudiere/switch.turn_on`\n- для выключения переключателя: `switch.controle_chaudiere/switch.turn_off`\n- для программирования котла на 25° и принудительного включения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:25`\n- для отправки 10° котлу и принудительного выключения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:10`&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/fr/feature-central-boiler.md)",
+        "description": "Введите сервисы для вызова включения/выключения центрального котла. Вызываемый сервис должен быть отформатирован следующим образом: `entity_id/service_name[/attribute:value]` (/attribute:value опционально)\nНапример:\n- для включения переключателя: `switch.controle_chaudiere/switch.turn_on`\n- для выключения переключателя: `switch.controle_chaudiere/switch.turn_off`\n- для программирования котла на 25° и принудительного включения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:25`\n- для отправки 10° котлу и принудительного выключения: `climate.thermostat_chaudiere/climate.set_temperature/temperature:10`",
         "data": {
           "central_boiler_activation_service": "Команда включения",
           "central_boiler_deactivation_service": "Команда выключения",
-          "central_boiler_activation_delay_sec": "Задержка включения (в секундах)"
+          "central_boiler_activation_delay_sec": "Задержка включения (в секундах)",
+          "keep_alive_boiler_delay_sec": "Задержка keep-alive (секунды)"
         },
         "data_description": {
           "central_boiler_activation_service": "Команда включения центрального котла в формате entity_id/service_name[/attribut:valeur]",
           "central_boiler_deactivation_service": "Команда выключения центрального котла в формате entity_id/service_name[/attribut:valeur]",
-          "central_boiler_activation_delay_sec": "Задержка включения (в секундах) перед включением центрального котла после того, как VTherm запросил включение"
+          "central_boiler_activation_delay_sec": "Задержка включения (в секундах) перед включением центрального котла после того, как VTherm запросил включение",
+          "keep_alive_boiler_delay_sec": "Задержка в секундах для периодической повторной отправки команды котла, если keep-alive включен. Установите 0, чтобы отключить keep-alive."
         }
       },
       "valve_regulation": {
         "title": "Саморегулирование с клапаном - {name}",
-        "description": "Конфигурация для саморегулирования с прямым управлением клапаном&nbsp;[![?](https://img.icons8.com/color/18/help.png)](https://github.com/jmcollin78/versatile_thermostat/blob/main/documentation/fr/self-regulation.md#auto-régulation-par-contrôle-direct-de-la-vanne)",
+        "description": "Конфигурация для саморегулирования с прямым управлением клапаном",
         "data": {
           "offset_calibration_entity_ids": "Сущности калибровки смещения",
           "opening_degree_entity_ids": "Сущности степени открытия",
           "closing_degree_entity_ids": "Сущности степени закрытия",
           "proportional_function": "Алгоритм",
-          "min_opening_degrees": "Минимальные степени открытия"
+          "opening_threshold_degree": "Пороговое значение открытия",
+          "min_opening_degrees": "Минимальные степени открытия",
+          "max_opening_degrees": "Максимальная степень открытия",
+          "max_closing_degree": "Максимальная степень закрытия"
         },
         "data_description": {
           "offset_calibration_entity_ids": "Список сущностей 'калибровки смещения'. Установите, если ваш TRV имеет такую сущность для лучшего регулирования. Должна быть одна для каждой управляющей климатической сущности",
           "opening_degree_entity_ids": "Список сущностей 'степени открытия'. Должна быть одна для каждой управляющей климатической сущности",
           "closing_degree_entity_ids": "Список сущностей 'степени закрытия'. Установите, если ваш TRV имеет такую сущность для лучшего регулирования. Должна быть одна для каждой управляющей климатической сущности",
-          "proportional_function": "Алгоритм для использования (TPI пока единственный)",
-          "min_opening_degrees": "Минимальное значение степени открытия для каждого управляющего устройства, через запятую. По умолчанию 0. Пример: 20, 25, 30"
+          "proportional_function": "Алгоритм для использования (другие алгоритмы можно установить как {plugins_link})",
+          "opening_threshold_degree": "Значение открытия клапана, ниже которого клапан должен считаться закрытым (и тогда будет применено 'max_closing_degree')",
+          "min_opening_degrees": "Минимальное значение степени открытия для каждого управляющего устройства, через запятую. По умолчанию 0. Пример: 20, 25, 30",
+          "max_opening_degrees": "Максимальное значение степени открытия для каждого базового устройства, через запятую. По умолчанию 100. Клапан никогда не откроется больше этого значения. Пример: 80, 85, 90",
+          "max_closing_degree": "Максимальное значение степени закрытия. Клапан никогда не закроется больше этого значения. Установите на 100, чтобы полностью закрыть клапан"
+        }
+      },
+      "sync_device_internal_temp": {
+        "title": "Synchronize device internal temperature",
+        "description": "Configuration to synchronize the internal temperature of the underlying devices with selected entities",
+        "data": {
+          "sync_with_calibration": "Apply offset calibration",
+          "sync_entity_ids": "Entities id used for synchronization"
+        },
+        "data_description": {
+          "sync_with_calibration": "Check to apply the offset calibration when synchronizing the internal temperature. Uncheck to directly copy the temperature from the selected entities",
+          "sync_entity_ids": "The list of the entities used to synchronize the internal temperature of the underlying devices. There should be one per underlying device. Should be a calibration entity if checkbox is selected or a temperature entity otherwise. Both are `number` entities."
+        }
+      },
+      "auto_tpi_configuration": {
+        "data": {
+          "auto_tpi_cooling_rate": "Скорость охлаждения ({unit}/ч)"
+        },
+        "data_description": {
+          "auto_tpi_cooling_rate": "Способность радиатора к охлаждению ({unit} в час). Оставьте 0 для автоматического обучения (bootstrap)."
+        }
+      },
+      "heating_failure_detection": {
+        "title": "Обнаружение сбоев отопления",
+        "description": "Настройка функции обнаружения сбоев отопления. Обнаруживает аномалии, когда ожидается нагрев, но температура не повышается, или когда отопление выключено, но температура продолжает расти.",
+        "data": {
+          "use_heating_failure_detection_feature": "Включить обнаружение сбоев отопления",
+          "use_heating_failure_detection_central_config": "Использовать центральную конфигурацию обнаружения сбоев",
+          "heating_failure_threshold": "Порог сбоя отопления",
+          "cooling_failure_threshold": "Порог сбоя охлаждения",
+          "heating_failure_detection_delay": "Задержка обнаружения (минуты)",
+          "temperature_change_tolerance": "Допуск изменения температуры (°C)",
+          "failure_detection_enable_template": "Шаблон включения обнаружения"
+        },
+        "data_description": {
+          "use_heating_failure_detection_feature": "Включить обнаружение аномалий отопления для VTherm с TPI",
+          "use_heating_failure_detection_central_config": "Отметьте для использования центральной конфигурации обнаружения сбоев. Снимите отметку для использования специфических параметров для этого VTherm",
+          "heating_failure_threshold": "Пороговый процент включения, выше которого отопление должно вызывать повышение температуры (0.9 = 90%)",
+          "cooling_failure_threshold": "Пороговый процент включения, ниже которого температура не должна повышаться (0.0 = 0%)",
+          "heating_failure_detection_delay": "Время в минутах ожидания перед проверкой, изменилась ли температура как ожидалось",
+          "temperature_change_tolerance": "Минимальное изменение температуры в градусах, считающееся значительным. Меньшие изменения игнорируются для фильтрации шума датчика (по умолчанию: 0.5°C)",
+          "failure_detection_enable_template": "Необязательный шаблон Jinja2, который должен вернуть True для включения обнаружения. Полезно для временного отключения обнаружения при активном внешнем источнике тепла (например, `is_state('binary_sensor.wood_stove', 'off')` в двойных фигурных скобках). Если пусто, обнаружение всегда включено."
         }
       }
     },
@@ -550,7 +704,12 @@
       "no_central_config": "Вы не можете выбрать 'использовать центральную конфигурацию', потому что центральная конфигурация не найдена. Вам нужно создать универсальный термостат типа 'Центральная конфигурация' для его использования.",
       "service_configuration_format": "Неверный формат конфигурации сервиса",
       "valve_regulation_nb_entities_incorrect": "Количество сущностей клапана для регулирования клапана должно быть равно количеству управляющих устройств",
-      "min_opening_degrees_format": "Ожидается список положительных целых чисел, разделенных запятыми. Пример: 20, 25, 30"
+      "sync_device_internal_temp_nb_entities_incorrect": "Количество сущностей для синхронизации внутренней температуры устройства должно быть равно количеству управляющих устройств",
+      "min_opening_degrees_format": "Ожидается список положительных целых чисел, разделенных запятыми. Пример: 20, 25, 30",
+      "max_opening_degrees_format": "Ожидается список положительных целых чисел от 0 до 100, разделенных запятыми. Пример: 80, 85, 90",
+      "min_max_opening_degrees_inconsistent": "Для каждого базового устройства max_opening_degrees должен быть строго больше min_opening_degrees. Проверьте вашу конфигурацию.",
+      "valve_control_parameters_cardinality_incorrect": "Списки минимальной и максимальной степени открытия не могут содержать больше значений, чем настроенных клапанов",
+      "vswitch_configuration_incorrect": "Неверная конфигурация настройки команды. Она обязательна для базовых объектов, которые не являются переключателями, и формат должен быть service_name[/attribute:value]. Дополнительная информация доступна в README"
     },
     "abort": {
       "already_configured": "Устройство уже настроено"
@@ -608,6 +767,19 @@
         "auto_start_stop_slow": "Медленное обнаружение",
         "auto_start_stop_medium": "Среднее обнаружение",
         "auto_start_stop_fast": "Быстрое обнаружение"
+      }
+    },
+    "power_unit": {
+      "options": {
+        "w": "Ватты (W)",
+        "kw": "Киловатты (kW)"
+      }
+    },
+    "central_power_unit": {
+      "options": {
+        "w": "Ватты (W)",
+        "kw": "Киловатты (kW)",
+        "auto": "Автоматически (автоматическое обнаружение из датчика)"
       }
     }
   },
@@ -672,6 +844,12 @@
       "boost_ac_away_temp": {
         "name": "Интенсивный AC (отсутствие)"
       }
+    }
+  },
+  "services": {
+    "set_hvac_mode_sleep": {
+      "name": "Установить режим HVAC «Сон»",
+      "description": "Переводит VTherm в сезонный режим сна. Он отображается как выключенный и для over_climate с прямым управлением клапаном и over_valve отправляет необработанный запрос на открытие клапана на 100 %. Физическое открытие по-прежнему ограничивается настроенным управлением клапаном и пределами сущности number."
     }
   }
 }

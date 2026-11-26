@@ -2,7 +2,6 @@
 
 # pylint: disable=line-too-long
 
-import logging
 from typing import Any
 from datetime import timedelta
 
@@ -27,6 +26,7 @@ from homeassistant.helpers.event import (
 from homeassistant.exceptions import ConditionError
 from homeassistant.helpers import condition
 
+from vtherm_api.log_collector import get_vtherm_logger
 from .const import *  # pylint: disable=wildcard-import, unused-wildcard-import
 from .commons import write_event_log
 from .commons_type import ConfigData
@@ -35,7 +35,7 @@ from .vtherm_hvac_mode import VThermHvacMode
 from .base_manager import BaseFeatureManager
 from .open_window_algorithm import WindowOpenDetectionAlgorithm
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 class FeatureWindowManager(BaseFeatureManager):
@@ -43,15 +43,8 @@ class FeatureWindowManager(BaseFeatureManager):
 
     unrecorded_attributes = frozenset(
         {
-            "window_sensor_entity_id",
             "is_window_configured",
-            "window_delay_sec",
-            "window_off_delay_sec",
-            "window_auto_configured",
-            "window_auto_open_threshold",
-            "window_auto_close_threshold",
-            "window_auto_max_duration",
-            "window_action",
+            "window_manager",
         }
     )
 
@@ -72,11 +65,12 @@ class FeatureWindowManager(BaseFeatureManager):
         self._is_configured: bool = False
         self._is_window_auto_configured: bool = False
         self._window_call_cancel: callable = None
+        self._window_observation_generation = 0
 
     @overrides
     def post_init(self, entry_infos: ConfigData):
         """Reinit of the manager"""
-        self.dearm_window_timer()
+        self._invalidate_window_observation()
 
         self._window_auto_state = STATE_UNAVAILABLE
         self._window_state = STATE_UNAVAILABLE
@@ -116,6 +110,7 @@ class FeatureWindowManager(BaseFeatureManager):
         self._window_auto_algo = WindowOpenDetectionAlgorithm(
             alert_threshold=self._window_auto_open_threshold,
             end_alert_threshold=self._window_auto_close_threshold,
+            vtherm=self._vtherm,
         )
 
         if self._is_window_auto_configured or (
@@ -133,7 +128,8 @@ class FeatureWindowManager(BaseFeatureManager):
 
         # Try to get last window bypass state
         old_state = await self._vtherm.async_get_last_state()
-        self._is_window_bypass = old_state is not None and hasattr(old_state, "attributes") and old_state.attributes.get("is_window_bypass") is True
+        old_attributes = getattr(old_state, "attributes", None) or {}
+        self._is_window_bypass = (old_attributes.get("window_manager") or {}).get("is_window_bypass") is True
 
         if self._is_configured:
             self.stop_listening()
@@ -149,7 +145,7 @@ class FeatureWindowManager(BaseFeatureManager):
     @overrides
     def stop_listening(self):
         """Stop listening and remove the eventual timer still running"""
-        self.dearm_window_timer()
+        self._invalidate_window_observation()
         super().stop_listening()
 
     def dearm_window_timer(self):
@@ -157,6 +153,11 @@ class FeatureWindowManager(BaseFeatureManager):
         if self._window_call_cancel:
             self._window_call_cancel()
             self._window_call_cancel = None
+
+    def _invalidate_window_observation(self):
+        """Invalidate captured callbacks and cancel the pending timer."""
+        self._window_observation_generation += 1
+        self.dearm_window_timer()
 
     @overrides
     async def refresh_state(self) -> bool:
@@ -187,29 +188,54 @@ class FeatureWindowManager(BaseFeatureManager):
         old_state = event.data.get("old_state")
         write_event_log(_LOGGER, self._vtherm, f"Window sensor changed to state {new_state.state if new_state else None}")
 
-        # Check delay condition
+        async def no_window_condition(_):
+            """No-op closure for events that do not schedule an observation."""
+
+        if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            self._invalidate_window_observation()
+            return no_window_condition
+
+        if old_state is not None and new_state.state == old_state.state:
+            return no_window_condition
+
+        if (
+            old_state is not None
+            and old_state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
+            and self._window_state in (STATE_UNKNOWN, STATE_UNAVAILABLE)
+        ):
+            self._window_state = old_state.state
+
+        if new_state.state == self._window_state:
+            self._invalidate_window_observation()
+            return no_window_condition
+
+        self._invalidate_window_observation()
+        delay = self._window_delay_sec if new_state.state == STATE_ON else self._window_off_delay_sec
+        expected_state = new_state.state
+        generation = self._window_observation_generation
+
         async def try_window_condition(_):
+            if generation != self._window_observation_generation:
+                return
+
             try:
                 long_enough = condition.state(
                     self._hass,
                     self._window_sensor_entity_id,
-                    new_state.state,
+                    expected_state,
                     timedelta(seconds=delay),
                 )
             except ConditionError:
                 long_enough = False
 
             if not long_enough:
-                _LOGGER.debug(
-                    "Window delay condition is not satisfied. Ignore window event"
-                )
-                self._window_state = old_state.state or STATE_OFF
+                _LOGGER.debug("%s - Window delay condition is not satisfied. Ignore window event", self)
                 return
 
             _LOGGER.debug("%s - Window delay condition is satisfied", self)
 
-            if self._window_state == new_state.state:
-                _LOGGER.debug("%s - no change in window state. Forget the event")
+            if self._window_state == expected_state:
+                _LOGGER.debug("%s - no change in window state. Forget the event", self)
                 return
 
             _LOGGER.debug("%s - Window ByPass is : %s", self, self._is_window_bypass)
@@ -218,17 +244,12 @@ class FeatureWindowManager(BaseFeatureManager):
                     "%s - Window ByPass is activated. Ignore window event", self
                 )
                 # We change the state but we don't apply the change
-                self._window_state = new_state.state
+                self._window_state = expected_state
             else:
-                await self.update_window_state(new_state.state)
+                await self.update_window_state(expected_state)
 
             self._vtherm.update_custom_attributes()
 
-        delay = self._window_delay_sec if new_state.state == STATE_ON else self._window_off_delay_sec
-        if new_state is None or old_state is None or new_state.state == old_state.state:
-            return try_window_condition
-
-        self.dearm_window_timer()
         self._window_call_cancel = async_call_later(self.hass, timedelta(seconds=delay), try_window_condition)
         # For testing purpose we need to access the inner function
         return try_window_condition
@@ -317,7 +338,7 @@ class FeatureWindowManager(BaseFeatureManager):
 
         if self._window_auto_algo.is_window_open_detected() and self._window_auto_state in [STATE_UNKNOWN, STATE_OFF] and self._vtherm.hvac_mode != VThermHvacMode_OFF:
             if (
-                self._vtherm.has_tpi
+                self._vtherm.has_prop
                 and self._vtherm.proportional_algorithm  # Added check to avoid initialization issues
                 and self._vtherm.safe_on_percent <= 0.0
             ):
@@ -476,6 +497,11 @@ class FeatureWindowManager(BaseFeatureManager):
         if not self._window_auto_algo:
             return None
         return self._window_auto_algo.last_slope
+
+    @property
+    def is_detected(self) -> bool:
+        """Return the overall state of the feature manager based on window state"""
+        return self.is_window_detected
 
     def __str__(self):
         return f"WindowManager-{self.name}"

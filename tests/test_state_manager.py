@@ -1,7 +1,7 @@
 # pylint: disable=unused-argument, line-too-long, protected-access, too-many-lines
 """ Test the Window management """
 import logging
-from unittest.mock import patch, PropertyMock, MagicMock
+from unittest.mock import AsyncMock, patch, PropertyMock, MagicMock
 
 from homeassistant.components.climate import HVACMode
 
@@ -150,6 +150,256 @@ async def test_vtherm_state_save_and_restor_oldfmt(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.parametrize(
+    ("specific_states_reason", "root_reason", "expected_reason"),
+    [
+        (HVAC_OFF_REASON_WINDOW_DETECTION, HVAC_OFF_REASON_MANUAL, HVAC_OFF_REASON_WINDOW_DETECTION),
+        (None, HVAC_OFF_REASON_WINDOW_DETECTION, HVAC_OFF_REASON_WINDOW_DETECTION),
+        (None, None, HVAC_OFF_REASON_MANUAL),
+    ],
+)
+async def test_vtherm_restore_hvac_off_reason(
+    hass: HomeAssistant,
+    specific_states_reason,
+    root_reason,
+    expected_reason,
+) -> None:
+    """Restore the HVAC off reason from current or legacy persisted state."""
+    attributes = {
+        "preset_mode": "eco",
+        "temperature": 22,
+        "specific_states": {},
+    }
+    if specific_states_reason is not None:
+        attributes["specific_states"][HVAC_OFF_REASON_NAME] = specific_states_reason
+    if root_reason is not None:
+        attributes[HVAC_OFF_REASON_NAME] = root_reason
+
+    vtherm_restored = BaseThermostat(hass, "unique_id", "name", {})
+    mock_state = MagicMock(state=HVACMode.OFF, attributes=attributes)
+
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+
+    assert vtherm_restored.hvac_off_reason == expected_reason
+
+
+@pytest.mark.parametrize("hidden_preset", [VThermPreset.SAFETY, VThermPreset.POWER])
+async def test_init_presets_restores_visible_requested_preset_after_hidden_override(hass: HomeAssistant, hidden_preset: VThermPreset) -> None:
+    """Keep the restored user preset when a hidden override was current at shutdown."""
+    vtherm = BaseThermostat(hass, "unique_id", "name", {CONF_TEMP_MIN: 7, CONF_TEMP_MAX: 30})
+    old_state = MagicMock(
+        state=HVACMode.HEAT,
+        attributes={
+            "current_state": VThermState(VThermHvacMode_HEAT, target_temperature=18, preset=hidden_preset).to_dict(),
+            "requested_state": VThermState(VThermHvacMode_HEAT, target_temperature=18, preset=VThermPreset.COMFORT).to_dict(),
+        },
+    )
+
+    with patch.object(vtherm, "async_get_last_state", return_value=old_state):
+        await vtherm.get_my_previous_state()
+
+    await vtherm.init_presets(None)
+
+    assert vtherm.requested_state.preset == VThermPreset.COMFORT
+    assert vtherm.current_state.preset == hidden_preset
+
+    await vtherm._state_manager.calculate_current_preset(vtherm)
+
+    assert vtherm.current_state.preset == VThermPreset.COMFORT
+    assert vtherm.requested_state.preset == VThermPreset.COMFORT
+
+
+@pytest.mark.parametrize("hidden_preset", [VThermPreset.SAFETY, VThermPreset.POWER])
+async def test_init_presets_does_not_invent_visible_preset_from_hidden_history(hass: HomeAssistant, hidden_preset: VThermPreset) -> None:
+    """Do not reapply or infer a visible preset when persisted history is hidden only."""
+    vtherm = BaseThermostat(hass, "unique_id", "name", {CONF_TEMP_MIN: 7, CONF_TEMP_MAX: 30})
+    vtherm.current_state.set_preset(hidden_preset)
+    vtherm.requested_state.set_preset(hidden_preset)
+
+    with patch.object(vtherm, "async_set_preset_mode_internal", new_callable=AsyncMock) as set_preset:
+        await vtherm.init_presets(None)
+
+    set_preset.assert_not_awaited()
+    assert vtherm.current_state.preset == hidden_preset
+    assert vtherm.requested_state.preset == hidden_preset
+
+
+async def test_vtherm_energy_restore_from_specific_states(hass: HomeAssistant) -> None:
+    """Test that energy is properly restored from specific_states (new format)"""
+    # Save the state using new format with energy in specific_states
+    state_dict = {
+        "preset_mode": "eco",
+        "temperature": 22,
+        "specific_states": {
+            "total_energy": 123.456,
+        },
+    }
+
+    vtherm_restored = BaseThermostat(hass, "unique_id", "name", {})
+    mock_state = MagicMock()
+    mock_state.attributes = state_dict
+    mock_state.state = HVACMode.HEAT
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+
+    # Check that energy has been restored from specific_states (rounded to 2 decimals by total_energy property)
+    assert vtherm_restored.total_energy == 123.46
+
+
+async def test_vtherm_energy_restore_from_root_level(hass: HomeAssistant) -> None:
+    """Test that energy is properly restored from root level (old format for backward compatibility)"""
+    # Save the state using old format with energy at root level
+    state_dict = {
+        "preset_mode": "eco",
+        "temperature": 22,
+        "total_energy": 789.012,
+    }
+
+    vtherm_restored = BaseThermostat(hass, "unique_id", "name", {})
+    mock_state = MagicMock()
+    mock_state.attributes = state_dict
+    mock_state.state = HVACMode.HEAT
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+
+    # Check that energy has been restored from root level (rounded to 2 decimals by total_energy property)
+    assert vtherm_restored.total_energy == 789.01
+
+
+async def test_vtherm_energy_restore_from_kilowatt_hours_is_converted_once(
+    hass: HomeAssistant,
+) -> None:
+    """A kWh state is normalized once to Wh and remains displayable as kWh."""
+    state_dict = {
+        "preset_mode": "eco",
+        "temperature": 22,
+        "specific_states": {"total_energy": 123.456},
+    }
+    vtherm_restored = BaseThermostat(
+        hass,
+        "unique_id",
+        "name",
+        {CONF_POWER_UNIT: POWER_UNIT_KILO_WATT},
+    )
+    mock_state = MagicMock()
+    mock_state.attributes = state_dict
+    mock_state.state = HVACMode.HEAT
+
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+        assert vtherm_restored._total_energy == 123456.0
+        assert (
+            vtherm_restored.power_manager.from_watts(
+                vtherm_restored.total_energy,
+                vtherm_restored.power_manager.power_unit,
+            )
+            == 123.456
+        )
+
+        await vtherm_restored.get_my_previous_state()
+
+    assert vtherm_restored._total_energy == 123456.0
+
+
+@pytest.mark.parametrize(
+    "specific_states, configuration, expected_energy_wh, should_persist",
+    [
+        ({"total_energy": 100, "total_energy_unit": POWER_UNIT_WATT}, {}, 100, True),
+        ({"total_energy": 100, "total_energy_unit": POWER_UNIT_KILO_WATT}, {}, 100000, False),
+        ({"total_energy": 100}, {CONF_POWER_UNIT: POWER_UNIT_WATT}, 100, True),
+    ],
+)
+async def test_vtherm_energy_restore_keeps_the_previously_persisted_unit(
+    hass: HomeAssistant,
+    specific_states,
+    configuration,
+    expected_energy_wh,
+    should_persist,
+) -> None:
+    """Changing the configured unit must not reinterpret historical energy."""
+    vtherm_restored = BaseThermostat(
+        hass,
+        "unique_id",
+        "name",
+        {CONF_POWER_UNIT: POWER_UNIT_KILO_WATT},
+    )
+    mock_state = MagicMock()
+    mock_state.attributes = {
+        "preset_mode": "eco",
+        "temperature": 22,
+        "specific_states": specific_states,
+        "configuration": configuration,
+    }
+    mock_state.state = HVACMode.HEAT
+
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+
+    assert vtherm_restored.total_energy == expected_energy_wh
+    assert vtherm_restored._energy_unit_needs_persistence is should_persist
+
+
+async def test_vtherm_energy_unit_is_rewritten_after_loading(hass: HomeAssistant) -> None:
+    """A restored energy unit mismatch is persisted immediately after startup."""
+    vtherm_restored = BaseThermostat(hass, "unique_id", "name", {})
+    vtherm_restored._energy_unit_needs_persistence = True
+
+    with (
+        patch.object(vtherm_restored, "update_custom_attributes") as update_attributes,
+        patch.object(vtherm_restored, "async_write_ha_state") as write_state,
+    ):
+        vtherm_restored._persist_energy_unit_if_needed()
+
+    update_attributes.assert_called_once()
+    write_state.assert_called_once()
+    assert vtherm_restored._energy_unit_needs_persistence is False
+
+
+async def test_vtherm_energy_restore_invalid_unit_uses_configured_unit(
+    hass: HomeAssistant,
+) -> None:
+    """An invalid persisted energy unit cannot corrupt a kW VTherm value."""
+    vtherm_restored = BaseThermostat(
+        hass,
+        "unique_id",
+        "name",
+        {CONF_POWER_UNIT: POWER_UNIT_KILO_WATT},
+    )
+    mock_state = MagicMock()
+    mock_state.attributes = {
+        "preset_mode": "eco",
+        "temperature": 22,
+        "specific_states": {"total_energy": 12.5, "total_energy_unit": "invalid"},
+    }
+    mock_state.state = HVACMode.HEAT
+
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+
+    assert vtherm_restored.total_energy == 12500
+    assert vtherm_restored._energy_unit_needs_persistence is True
+
+
+async def test_vtherm_energy_restore_default_zero(hass: HomeAssistant) -> None:
+    """Test that energy defaults to 0 when not present in saved state"""
+    # Save the state without energy
+    state_dict = {
+        "preset_mode": "eco",
+        "temperature": 22,
+    }
+
+    vtherm_restored = BaseThermostat(hass, "unique_id", "name", {})
+    mock_state = MagicMock()
+    mock_state.attributes = state_dict
+    mock_state.state = HVACMode.HEAT
+    with patch.object(vtherm_restored, "async_get_last_state", return_value=mock_state):
+        await vtherm_restored.get_my_previous_state()
+
+    # Check that energy defaults to 0
+    assert vtherm_restored.total_energy == 0
+
+
+@pytest.mark.parametrize(
     "is_over_climate,requested_hvac_mode,current_hvac_mode,last_central_mode,window_action,is_safety_detected,safety_default_percent,is_window_detected,is_auto_stop_detected,expected_result, expected_hvac_mode,expected_hvac_off_reason",
     # fmt: off
     [
@@ -264,7 +514,6 @@ async def test_state_manager_calculate_hvac_mode(
 
     fake_vtherm.auto_start_stop_manager = MagicMock()
     type(fake_vtherm.auto_start_stop_manager).is_auto_stop_detected = PropertyMock(return_value=is_auto_stop_detected)
-
     ret = await state_manager.calculate_current_hvac_mode(fake_vtherm)
     assert ret is expected_result
 
@@ -341,6 +590,11 @@ async def test_state_manager_calculate_current_preset(
     # Mock safety manager
     fake_vtherm.safety_manager = MagicMock()
     type(fake_vtherm.safety_manager).is_safety_detected = PropertyMock(return_value=is_safety_detected)
+
+    # Mock timed preset manager (not active by default)
+    fake_vtherm.timed_preset_manager = MagicMock()
+    type(fake_vtherm.timed_preset_manager).is_timed_preset_active = PropertyMock(return_value=False)
+    type(fake_vtherm.timed_preset_manager).timed_preset = PropertyMock(return_value=None)
 
     ret = await state_manager.calculate_current_preset(fake_vtherm)
     assert ret is expected_result

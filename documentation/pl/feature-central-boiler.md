@@ -14,14 +14,22 @@ Możesz sterować kotłem głównym. Jak długo możliwe jest jego załączanie 
 <please update translation from English version>
 
 Podstawowa zasada działania jest następująca:
-1. Dodawana jest nowa encja typu `binary_sensor`, domyślnie nazwana `binary_sensor.central_boiler`.
-2. W konfiguracji termostatu określasz, czy ma on sterować kotłem. W instalacji heterogenicznej niektóre termostaty _VTherm_ powinny sterować kotłem, a inne nie. Dlatego w konfiguracji każdego termostatu należy wskazać, czy ma on sterować kotłem.
-3. `binary_sensor.central_boiler` nasłuchuje zmian stanu w urządzeniach typu _VTherm_ oznaczonych jako sterujące kotłem.
-4. Gdy liczba urządzeń sterowanych termostatem _VTherm_, które żądają ogrzewania (tj. gdy ich `hvac_action` zmienia się na `Heating`), przekroczy konfigurowalny próg, `binary_sensor.central_boiler` włącza się, a jeśli skonfigurowano usługę aktywacji, zostanie ona wywołana.
-5. Jeśli liczba urządzeń żądających ogrzewania spadnie poniżej progu, `binary_sensor.central_boiler` wyłącza się, a jeśli skonfigurowano usługę dezaktywacji, zostanie ona wywołana.
-6. Masz dostęp do dwóch encji:
+1. Dodawana jest nowa encja typu `binary_sensor`, domyślnie nazwana `binary_sensor.central_configuration_central_boiler`.
+2. W konfiguracji termostatu określasz, czy ma on sterować kotłem. W instalacji heterogenicznej niektóre termostaty _VTherm_ powinny sterować kotłem, a inne nie. Dlatego w konfiguracji każdego termostatu należy wskazać, czy ma on sterować kotłem. Każdemu termostatowi _VTherm_ sterującemu kotłem można przypisać moc.
+3. `binary_sensor.central_configuration_central_boiler` nasłuchuje zmian stanu w urządzeniach typu _VTherm_ oznaczonych jako sterujące kotłem.
+4. Gdy liczba urządzeń sterowanych termostatem _VTherm_, które żądają ogrzewania (tj. gdy ich `hvac_action` zmienia się na `Heating`), osiągnie konfigurowalny próg **lub** suma żądanej mocy osiągnie próg mocy, `binary_sensor.central_configuration_central_boiler` włącza się, a jeśli skonfigurowano usługę aktywacji, zostanie ona wywołana.
+5. Jeśli żaden z niezerowych progów nie jest już osiągany, `binary_sensor.central_configuration_central_boiler` wyłącza się, a jeśli skonfigurowano usługę dezaktywacji, zostanie ona wywołana.
+6. Masz dostęp do czterech encji:
    - Encja typu `number`, domyślnie nazwana `number.boiler_activation_threshold`, która określa próg aktywacji. Próg ten to liczba urządzeń (grzejników) żądających ogrzewania.
    - Encja typu `sensor`, domyślnie nazwana `sensor.nb_device_active_for_boiler`, która pokazuje liczbę urządzeń żądających ogrzewania. Na przykład termostat z 4 zaworami, z których 3 żądają ogrzewania, spowoduje, że sensor ten pokaże wartość 3. Zalicza się tu tylko te urządzenia spośród tych termostatów _VTherm_, które oznaczone są jako sterujące kotłem głownym.
+  - Encja typu `number` o nazwie `number.boiler_power_activation_threshold`, która określa próg żądanej mocy. Kocioł zostanie uruchomiony, gdy suma mocy żądanej przez termostaty _VTherm_ oznaczone jako sterujące kotłem osiągnie lub przekroczy ten próg.
+  - Encja typu `sensor` o nazwie `sensor.total_power_active_for_boiler`, która pokazuje ostatnio obliczoną sumę mocy.
+
+Kocioł główny zostanie uruchomiony, gdy zostanie osiągnięty lub przekroczony którykolwiek z dwóch progów: próg liczby aktywnych urządzeń podrzędnych **lub** próg żądanej mocy. Obowiązuje logiczne „LUB”. Ustawienie progu na zero wyłącza odpowiadające mu kryterium.
+
+> **Uwaga dotycząca progu liczby aktywnych urządzeń podrzędnych:** W przypadku termostatu _VTherm_ sterującego zaworami zliczany jest ich stan aktywności. Ustawienia zaworów, w szczególności próg otwarcia, decydują więc o tym, czy zawór zostanie uwzględniony.
+
+> **Ostrzeżenie dotyczące progu mocy:** Jest on obliczany na podstawie mocy żądanej przez algorytm, niezależnie od stopnia otwarcia zaworów. Żądana moc może być niezerowa, mimo że skonfigurowane progi otwarcia powodują, iż zawory nie są uznawane za aktywne. Dlatego próg mocy nie jest zalecany dla termostatów _VTherm_ sterujących zaworami.
 
 Dzięki temu masz zawsze pod ręką informacje potrzebne do zarządzania i dostosowywania uruchamiania kotła.
 
@@ -38,6 +46,10 @@ W kolejnym oknie konfiguracyjnym możesz podać konfigurację dla akcji (np. us�
 
 ![Add a Central Boiler](images/config-central-boiler-2.png)
 
+Pierwszy parametr określa opóźnienie w sekundach przed aktywacją kotła. Wartość domyślna to 0, co oznacza, że kocioł jest aktywowany natychmiast po przekroczeniu progu. Jeśli musisz dać zawórom czas na otwarcie (na przykład), ustaw dodatnią wartość w sekundach. Niektóre zawory systemów ogrzewania podłogowego mogą otwierać się przez kilka minut i mogłoby być szkodliwe aktywować pompę kotła przed pełnym otwarciem zaworów.
+
+Drugi parametr odpowiada **opóźnieniu keep-alive** w sekundach. Ten parametr umożliwia okresowe ponowne wysyłanie polecenia aktywacji kotła, aby zapewnić, że kocioł pozostaje włączony. Na przykład, jeśli polecenie kotła nie zostanie prawidłowo odebrane lub kocioł wyłączy się samodzielnie, to samo polecenie będzie wysyłane w regularnych odstępach czasu. Wartość domyślna to 0, co oznacza, że keep-alive jest wyłączony. Jeśli chcesz włączyć tę funkcję, ustaw dodatnią wartość w sekundach (na przykład 60, aby ponownie wysłać polecenie co minutę). Ten parametr jest opcjonalny i można go pozostawić na 0, jeśli go nie potrzebujesz.
+
 Akcje (np. usługi) są konfigurowane zgodnie z opisem na stronie:
 1. Ogólny format to `entity_id/service_id[/attribute:value]` (gdzie `/attribute:value` jest opcjonalne).
 2. `entity_id` to nazwa encji sterującej kotłem w formie `domain.entity_name`. Na przykład: `switch.chaudiere` dla kotła sterowanego przełącznikiem, `climate.chaudière` dla kotła sterowanego termostatem lub dowolna inna encja umożliwiająca sterowanie kotłem (nie ma tu ograniczeń). Możesz także przełączać pomocnicze encje (`helpers`), takie jak `input_boolean` czy `input_number`.
@@ -50,6 +62,16 @@ Przykłady (dostosuj je do Twojego przypadku):
 - `switch.pompe_chaudiere/switch.turn_on`: aby włączyć przełącznik zasilający pompę kotła.
 - `switch.pompe_chaudiere/switch.turn_off`: aby wyłączyć przełącznik zasilający pompę kotła.
 -  ...
+
+### Użycie szablonu jako wartości
+Wartość (część po `attribute:`) może być szablonem Home Assistant. Szablon jest renderowany przy każdym wysłaniu polecenia: przy włączeniu, wyłączeniu oraz przy każdym keep-alive. Wartość może zawierać `/` i `:`.
+
+Przykład dla kotła sterowanego regulatorem pokojowym, którego temperatura zadana jest względna do jego własnej zmierzonej temperatury:
+- włączenie: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) + 1 }}`
+- wyłączenie: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) - 2 }}`
+
+> **Wskazówka**
+> Użyj `float(wartość_domyślna)`, aby szablon nigdy nie zawodził, i włącz keep-alive, aby temperatura zadana podążała za zmierzoną temperaturą. Jeśli szablonu nie można wyrenderować, polecenie jest pomijane, a błąd zapisywany w logach. Szablon, który się nie kompiluje, jest odrzucany podczas walidacji konfiguracji.
 
 ### Jak znaleźć właściwą akcję?
 Aby wybrać właściwą akcję, możesz przejść w Home Assistancie do sekcji `Narzędzia deweloperskie -> Akcje`, wyszukać akcję do wywołania, encję do sterowania oraz wszelkie wymagane parametry. Kliknij przycisk `Wykonaj akcję`. Jeśli Twój kocioł się uruchomi, oznacza to, że konfiguracja jest poprawna. Następnie przełącz się w tryb YAML i skopiuj parametry.
@@ -78,20 +100,7 @@ Zdarzenie aktywacji:
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: true
-  entity_id: binary_sensor.central_boiler
-  name: Kocioł główny
-  state_attributes: null
-origin: LOCAL
-time_fired: "2024-01-14T11:33:52.342026+00:00"
-context:
-  id: 01HM3VZRJP3WYYWPNSDAFARW1T
-  parent_id: null
-  user_id: null
-```yaml
-event_type: versatile_thermostat_central_boiler_event
-data:
-  central_boiler: true
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Kocioł główny
   state_attributes: null
 origin: LOCAL
@@ -107,7 +116,7 @@ Zdarzenie deaktywacji:
 event_type: versatile_thermostat_central_boiler_event
 data:
   central_boiler: false
-  entity_id: binary_sensor.central_boiler
+  entity_id: binary_sensor.central_configuration_central_boiler
   name: Kocioł główny
   state_attributes: null
 origin: LOCAL

@@ -1,14 +1,14 @@
 # pylint: disable=unused-argument
 """ Implements the VersatileThermostat sensors component """
 import logging
+from vtherm_api.log_collector import get_vtherm_logger
 import math
+from collections.abc import Callable
 
 from homeassistant.core import HomeAssistant, callback, Event, State
 
 from homeassistant.const import (
     UnitOfTime,
-    UnitOfPower,
-    UnitOfEnergy,
     PERCENTAGE,
 )
 
@@ -33,8 +33,9 @@ from homeassistant.components.climate import (
 
 
 from .base_thermostat import BaseThermostat
-from .vtherm_api import VersatileThermostatAPI
+from .vtherm_central_api import VersatileThermostatAPI
 from .base_entity import VersatileThermostatBaseEntity
+from .commons import cleanup_orphan_entity
 from .const import (
     DOMAIN,
     DEVICE_MANUFACTURER,
@@ -52,12 +53,11 @@ from .const import (
     CONF_AUTO_REGULATION_MODE,
     CONF_TPI_COEF_INT,
     CONF_TPI_COEF_EXT,
+    CONF_AUTO_TPI_MODE,
     overrides,
 )
 
-THRESHOLD_WATT_KILO = 100
-
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 async def async_setup_entry(
@@ -66,12 +66,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VersatileThermostat sensors with config flow."""
-    _LOGGER.debug(
-        "Calling async_setup_entry entry=%s, data=%s", entry.entry_id, entry.data
-    )
-
     unique_id = entry.entry_id
     name = entry.data.get(CONF_NAME)
+    _LOGGER.debug("%s - Calling async_setup_entry entry=%s, data=%s", name, entry.entry_id, entry.data)
+
     vt_type = entry.data.get(CONF_THERMOSTAT_TYPE)
     have_valve_regulation = (
         entry.data.get(CONF_AUTO_REGULATION_MODE) == CONF_AUTO_REGULATION_VALVE
@@ -100,7 +98,18 @@ async def async_setup_entry(
             ]:
                 entities.append(MeanPowerSensor(hass, unique_id, name, entry.data))
 
-        if entry.data.get(CONF_PROP_FUNCTION) == PROPORTIONAL_FUNCTION_TPI:
+        is_tpi_capable = entry.data.get(CONF_THERMOSTAT_TYPE) in [
+            CONF_THERMOSTAT_SWITCH,
+            CONF_THERMOSTAT_VALVE,
+        ] or (
+            entry.data.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_CLIMATE
+            and have_valve_regulation
+        )
+        has_proportional_algorithm = (
+            is_tpi_capable and entry.data.get(CONF_PROP_FUNCTION) is not None
+        )
+
+        if has_proportional_algorithm:
             entities.append(OnPercentSensor(hass, unique_id, name, entry.data))
             entities.append(OnTimeSensor(hass, unique_id, name, entry.data))
             entities.append(OffTimeSensor(hass, unique_id, name, entry.data))
@@ -119,12 +128,21 @@ async def async_setup_entry(
                 RegulatedTemperatureSensor(hass, unique_id, name, entry.data)
             )
 
-        # Add Auto TPI Sensor for TPI-based thermostats
-        if entry.data.get(CONF_THERMOSTAT_TYPE) in [
-            CONF_THERMOSTAT_SWITCH,
-            CONF_THERMOSTAT_VALVE,
-        ] or (entry.data.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_CLIMATE and have_valve_regulation):
+        # Add Auto TPI Sensor only if:
+        # 1. Thermostat is TPI-capable
+        # 2. TPI algorithm is selected
+        # 3. Auto TPI mode is enabled in configuration
+        should_have_auto_tpi = (
+            is_tpi_capable
+            and entry.data.get(CONF_PROP_FUNCTION) == PROPORTIONAL_FUNCTION_TPI
+            and entry.data.get(CONF_AUTO_TPI_MODE, False)
+        )
+
+        if should_have_auto_tpi:
             entities.append(AutoTpiSensor(hass, unique_id, name, entry.data))
+        else:
+            # Cleanup: Remove orphan Auto TPI sensor from registry if it exists
+            await cleanup_orphan_entity(hass, entry, "sensor", name, "auto_tpi_learning")
 
     if entities:
         async_add_entities(entities, True)
@@ -133,10 +151,11 @@ async def async_setup_entry(
 class EnergySensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a Energy sensor which exposes the energy"""
 
+    _attr_translation_key = "energy"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Energy"
         self._attr_unique_id = f"{self._device_name}_energy"
 
     @callback
@@ -144,15 +163,18 @@ class EnergySensor(VersatileThermostatBaseEntity, SensorEntity):
         """Called when my climate have change"""
         # _LOGGER.debug("%s - climate state change", self._attr_unique_id)
 
-        energy = self.my_climate.total_energy
-        if energy is None:
+        energy_wh = self.my_climate.total_energy
+        if energy_wh is None:
             return
 
-        if math.isnan(energy) or math.isinf(energy):
+        if math.isnan(energy_wh) or math.isinf(energy_wh):
             raise ValueError(f"Sensor has illegal state {self.my_climate.total_energy}")
 
+        # Convert from internal Wh to display unit (Wh or kWh)
+        displayed_energy = self.my_climate.power_manager.from_watts(energy_wh, self.my_climate.power_manager.power_unit)
+
         old_state = self._attr_native_value
-        self._attr_native_value = round(energy, self.suggested_display_precision)
+        self._attr_native_value = round(displayed_energy, self.suggested_display_precision)
         if old_state != self._attr_native_value:
             self.async_write_ha_state()
         return
@@ -163,10 +185,14 @@ class EnergySensor(VersatileThermostatBaseEntity, SensorEntity):
 
     @property
     def device_class(self) -> SensorDeviceClass | None:
+        if not self.my_climate:
+            return None
         return SensorDeviceClass.ENERGY
 
     @property
     def state_class(self) -> SensorStateClass | None:
+        if not self.my_climate:
+            return None
         return SensorStateClass.TOTAL_INCREASING
 
     @property
@@ -174,10 +200,7 @@ class EnergySensor(VersatileThermostatBaseEntity, SensorEntity):
         if not self.my_climate:
             return None
 
-        if self.my_climate.power_manager.device_power > THRESHOLD_WATT_KILO:
-            return UnitOfEnergy.WATT_HOUR
-        else:
-            return UnitOfEnergy.KILO_WATT_HOUR
+        return self.my_climate.power_manager.energy_unit
 
     @property
     def suggested_display_precision(self) -> int | None:
@@ -188,10 +211,11 @@ class EnergySensor(VersatileThermostatBaseEntity, SensorEntity):
 class MeanPowerSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a power sensor which exposes the mean power in a cycle"""
 
+    _attr_translation_key = "mean_power_cycle"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Mean power cycle"
         self._attr_unique_id = f"{self._device_name}_mean_power_cycle"
 
     @callback
@@ -199,22 +223,25 @@ class MeanPowerSensor(VersatileThermostatBaseEntity, SensorEntity):
         """Called when my climate have change"""
         # _LOGGER.debug("%s - climate state change", self._attr_unique_id)
 
-        mean_power = self.my_climate.power_manager.mean_cycle_power
-        if mean_power is None:
+        mean_cycle_power = self.my_climate.power_manager.mean_cycle_power
+        if mean_cycle_power is None:
             return
 
-        if math.isnan(
-            float(mean_power)
-        ) or math.isinf(mean_power):
-            raise ValueError(
-                f"Sensor has illegal state {mean_power}"
-            )
+        if math.isnan(float(mean_cycle_power)) or math.isinf(float(mean_cycle_power)):
+            raise ValueError(f"Sensor has illegal state {mean_cycle_power}")
+
+        mean_cycle_power = float(mean_cycle_power)
+        # Convert from internal Watts to display unit
+        displayed_power = self.my_climate.power_manager.from_watts(mean_cycle_power, self.my_climate.power_manager.power_unit)
 
         old_state = self._attr_native_value
-        self._attr_native_value = round(
-            mean_power,
-            self.suggested_display_precision,
-        )
+        if displayed_power is None:
+            self._attr_native_value = None
+        else:
+            self._attr_native_value = round(
+                displayed_power,
+                self.suggested_display_precision,
+            )
         if old_state != self._attr_native_value:
             self.async_write_ha_state()
         return
@@ -236,13 +263,10 @@ class MeanPowerSensor(VersatileThermostatBaseEntity, SensorEntity):
         if not self.my_climate:
             return None
 
-        if self.my_climate.power_manager.device_power > THRESHOLD_WATT_KILO:
-            return UnitOfPower.WATT
-        else:
-            return UnitOfPower.KILO_WATT
+        return self.my_climate.power_manager.power_unit
 
     @property
-    def suggested_display_precision(self) -> int | None:
+    def suggested_display_precision(self) -> int:
         """Return the suggested number of decimal digits for display."""
         return 3
 
@@ -250,10 +274,11 @@ class MeanPowerSensor(VersatileThermostatBaseEntity, SensorEntity):
 class OnPercentSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a on percent sensor which exposes the on_percent in a cycle"""
 
+    _attr_translation_key = "power_percent"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Power percent"
         self._attr_unique_id = f"{self._device_name}_power_percent"
 
     @callback
@@ -261,13 +286,16 @@ class OnPercentSensor(VersatileThermostatBaseEntity, SensorEntity):
         """Called when my climate have change"""
         # _LOGGER.debug("%s - climate state change", self._attr_unique_id)
 
-        on_percent = (
-            float(self.my_climate.proportional_algorithm.on_percent)
-            if self.my_climate and self.my_climate.has_tpi and self.my_climate.proportional_algorithm
+        raw_on_percent = (
+            self.my_climate.proportional_algorithm.on_percent
+            if self.my_climate
+            and self.my_climate.has_prop
+            and self.my_climate.proportional_algorithm is not None
             else None
         )
-        if on_percent is None:
+        if raw_on_percent is None:
             return
+        on_percent = float(raw_on_percent)
 
         if math.isnan(on_percent) or math.isinf(on_percent):
             raise ValueError(f"Sensor has illegal state {on_percent}")
@@ -305,37 +333,42 @@ class OnPercentSensor(VersatileThermostatBaseEntity, SensorEntity):
 class AutoTpiSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of the Auto TPI Learning state"""
 
+    _attr_translation_key = "auto_tpi_learning"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the Auto TPI sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Auto TPI Learning State"
         self._attr_unique_id = f"{self._device_name}_auto_tpi_learning"
         self._attr_icon = "mdi:brain"
 
     @callback
     async def async_my_climate_changed(self, event: Event = None):
         """Called when my climate have change"""
-        
-        # Verify has_tpi and proportional_algorithm
-        # proportional_algorithm can be None during initialization even if has_tpi is True
-        if not self.my_climate or not self.my_climate.has_tpi or not self.my_climate.proportional_algorithm:
+
+        # Verify has_prop and proportional_algorithm
+        # proportional_algorithm can be None during initialization even if has_prop is True
+        if not self.my_climate or not self.my_climate.has_prop:
             self._attr_native_value = "disabled"
             self.async_write_ha_state()
             return
-        
-        if not hasattr(self.my_climate, "_auto_tpi_manager") or not self.my_climate._auto_tpi_manager:
-             self._attr_native_value = "disabled"
-             self.async_write_ha_state()
-             return
 
-        manager = self.my_climate._auto_tpi_manager
-        
+        if not hasattr(self.my_climate, "auto_tpi_manager") or not self.my_climate.auto_tpi_manager:
+            self._attr_native_value = "disabled"
+            self.async_write_ha_state()
+            return
+
+        manager = self.my_climate.auto_tpi_manager
+
         # Determine state
         if manager.learning_active:
-            self._attr_native_value = "Active"
+            if manager.is_in_bootstrap:
+                self._attr_native_value = "bootstrap"
+            else:
+                self._attr_native_value = "active"
         else:
-            self._attr_native_value = "Off" # Or "Completed" / "Idle" depending on context, but "Off" implies not learning.
-            
+            self._attr_native_value = "off" # Or "Completed" / "Idle" depending on context, but "Off" implies not learning.
+
+        # Update attributes
         # Update attributes
         self._attr_extra_state_attributes = {
             "coeff_int_cycles": manager.int_cycles,
@@ -344,11 +377,25 @@ class AutoTpiSensor(VersatileThermostatBaseEntity, SensorEntity):
             "thermal_time_constant_hours": manager.time_constant,  # Building's thermal time constant τ
             "model_confidence": manager.confidence,  # Model confidence (R² or percentage)
             "last_learning_status": manager.state.last_learning_status,  # Reason for last learning outcome
-            "max_capacity_heat": manager.state.max_capacity_heat,
-            "max_capacity_cool": manager.state.max_capacity_cool,
             "learning_start_dt": manager.state.learning_start_date,
+            "allow_kint_boost_on_stagnation": manager.state.allow_kint_boost,
+            "allow_kext_compensation_on_overshoot": manager.state.allow_kext_overshoot,
+            "bootstrap_failure_count": manager.state.bootstrap_failure_count,
         }
-        
+
+        # Add mode-specific attributes
+        if manager._current_hvac_mode == "cool":
+            self._attr_extra_state_attributes.update({
+                "max_capacity_cool": manager.state.max_capacity_cool,
+            })
+        else:
+            self._attr_extra_state_attributes.update({
+                "max_capacity_heat": manager.state.max_capacity_heat,
+                "capacity_heat_status": "learning" if manager.is_in_bootstrap else "learned",
+                "capacity_heat_value": manager.state.max_capacity_heat,
+                "capacity_heat_count": manager.state.capacity_heat_learn_count,
+            })
+
         # Add calculated TPI coefficients
         calculated = manager.get_calculated_params()
         self._attr_extra_state_attributes.update({
@@ -362,10 +409,11 @@ class AutoTpiSensor(VersatileThermostatBaseEntity, SensorEntity):
 class ValveOpenPercentSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a on percent sensor which exposes the on_percent in a cycle"""
 
+    _attr_translation_key = "valve_open_percent"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Valve open percent"
         self._attr_unique_id = f"{self._device_name}_valve_open_percent"
 
     @callback
@@ -408,10 +456,11 @@ class ValveOpenPercentSensor(VersatileThermostatBaseEntity, SensorEntity):
 class OnTimeSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a on time sensor which exposes the on_time_sec in a cycle"""
 
+    _attr_translation_key = "on_time"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "On time"
         self._attr_unique_id = f"{self._device_name}_on_time"
 
     @callback
@@ -420,8 +469,8 @@ class OnTimeSensor(VersatileThermostatBaseEntity, SensorEntity):
         # _LOGGER.debug("%s - climate state change", self._attr_unique_id)
 
         on_time = (
-            float(self.my_climate.proportional_algorithm.on_time_sec)
-            if self.my_climate and self.my_climate.has_tpi and self.my_climate.proportional_algorithm
+            float(self.my_climate.on_time_sec)
+            if self.my_climate and hasattr(self.my_climate, "on_time_sec")
             else None
         )
 
@@ -457,10 +506,11 @@ class OnTimeSensor(VersatileThermostatBaseEntity, SensorEntity):
 class OffTimeSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a on time sensor which exposes the off_time_sec in a cycle"""
 
+    _attr_translation_key = "off_time"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Off time"
         self._attr_unique_id = f"{self._device_name}_off_time"
 
     @callback
@@ -469,8 +519,8 @@ class OffTimeSensor(VersatileThermostatBaseEntity, SensorEntity):
         # _LOGGER.debug("%s - climate state change", self._attr_unique_id)
 
         off_time = (
-            float(self.my_climate.proportional_algorithm.off_time_sec)
-            if self.my_climate and self.my_climate.has_tpi and self.my_climate.proportional_algorithm
+            float(self.my_climate.off_time_sec)
+            if self.my_climate and hasattr(self.my_climate, "off_time_sec")
             else None
         )
         if off_time is None:
@@ -505,10 +555,11 @@ class OffTimeSensor(VersatileThermostatBaseEntity, SensorEntity):
 class LastTemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a last temperature datetime sensor"""
 
+    _attr_translation_key = "last_temperature_date"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the last temperature datetime sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Last temperature date"
         self._attr_entity_registry_enabled_default = False
         self._attr_unique_id = f"{self._device_name}_last_temp_datetime"
 
@@ -535,10 +586,11 @@ class LastTemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
 class LastExtTemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a last external temperature datetime sensor"""
 
+    _attr_translation_key = "last_external_temperature_date"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the last temperature datetime sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Last external temperature date"
         self._attr_entity_registry_enabled_default = False
         self._attr_unique_id = f"{self._device_name}_last_ext_temp_datetime"
 
@@ -565,10 +617,11 @@ class LastExtTemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
 class TemperatureSlopeSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a sensor which exposes the temperature slope curve"""
 
+    _attr_translation_key = "temperature_slope"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the slope sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Temperature slope"
         self._attr_unique_id = f"{self._device_name}_temperature_slope"
 
     @callback
@@ -622,10 +675,11 @@ class TemperatureSlopeSensor(VersatileThermostatBaseEntity, SensorEntity):
 class RegulatedTemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a Energy sensor which exposes the energy"""
 
+    _attr_translation_key = "regulated_temperature"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the regulated temperature sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Regulated temperature"
         self._attr_unique_id = f"{self._device_name}_regulated_temperature"
 
     @callback
@@ -673,10 +727,11 @@ class RegulatedTemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
 class EMATemperatureSensor(VersatileThermostatBaseEntity, SensorEntity):
     """Representation of a Exponential Moving Average temp"""
 
+    _attr_translation_key = "ema_temperature"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the regulated temperature sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "EMA temperature"
         self._attr_unique_id = f"{self._device_name}_ema_temperature"
 
     @callback
@@ -725,6 +780,11 @@ class NbActiveDeviceForBoilerSensor(SensorEntity):
     """Representation of the  number of VTherm
     which are active and configured to activate the boiler"""
 
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "nb_device_active_boiler"
+
+    # TODO remove all listener mecanisms
     _entity_component_unrecorded_attributes = SensorEntity._entity_component_unrecorded_attributes.union(  # pylint: disable=protected-access
         frozenset({"active_device_ids"})
     )
@@ -734,12 +794,11 @@ class NbActiveDeviceForBoilerSensor(SensorEntity):
         self._hass = hass
         self._config_id = unique_id
         self._device_name = entry_infos.get(CONF_NAME)
-        self._attr_name = "Nb device active for boiler"
         self._attr_unique_id = "nb_device_active_boiler"
         self._attr_value = self._attr_native_value = None  # default value
         self._entities = []
         self._attr_active_device_ids = []  # Holds the entity ids of active devices``
-        self._cancel_listener_nb_active: callable | None = None
+        self._cancel_listener_nb_active: Callable | None = None
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -784,7 +843,7 @@ class NbActiveDeviceForBoilerSensor(SensorEntity):
 
         # Listen to all VTherm underlying state change
         self._entities = []
-        underlying_entities_id = []
+        # underlying_entities_id = []
 
         component: EntityComponent[ClimateEntity] = self.hass.data.get(CLIMATE_DOMAIN)
         if component is None:
@@ -793,27 +852,27 @@ class NbActiveDeviceForBoilerSensor(SensorEntity):
 
         self.cancel_listening_nb_active()
 
-        for entity in component.entities:
+        for entity in list(component.entities):
             if isinstance(entity, BaseThermostat) and entity.is_used_by_central_boiler:
                 self._entities.append(entity)
-                for under in entity.activable_underlying_entities:
-                    underlying_entities_id.append(under.entity_id)
-        if len(underlying_entities_id) > 0:
-            # Arme l'écoute de la première entité
-            self._cancel_listener_nb_active = async_track_state_change_event(
-                self._hass,
-                underlying_entities_id,
-                self.calculate_nb_active_devices,
-            )
-            _LOGGER.info(
-                "%s - the underlyings that could control the central boiler are %s",
-                self,
-                underlying_entities_id,
-            )
-            # Fix 1406
-            # self.async_on_remove(self._cancel_listener_nb_active)
-        else:
-            _LOGGER.debug("%s - no VTherm could control the central boiler", self)
+                # for under in entity.activable_underlying_entities:
+                #    underlying_entities_id.append(under.entity_id)
+        # if len(underlying_entities_id) > 0:
+        # Arme l'écoute de la première entité
+        # self._cancel_listener_nb_active = async_track_state_change_event(
+        #     self._hass,
+        #     underlying_entities_id,
+        #     self.calculate_nb_active_devices,
+        # )
+        #    _LOGGER.info(
+        #        "%s - the underlyings that could control the central boiler are %s",
+        #        self,
+        #        underlying_entities_id,
+        #     )
+        # Fix 1406
+        # self.async_on_remove(self._cancel_listener_nb_active)
+        # else:
+        #    _LOGGER.debug("%s - no VTherm could control the central boiler", self)
 
         await self.calculate_nb_active_devices(None)
 
@@ -866,7 +925,7 @@ class NbActiveDeviceForBoilerSensor(SensorEntity):
         for entity in self._entities:
             device_actives = entity.device_actives
             _LOGGER.debug(
-                "After examining the device_actives of %s, device_actives is %s",
+                "%s - After examining the device_actives, device_actives is %s",
                 entity.name,
                 device_actives,
             )
@@ -886,13 +945,13 @@ class NbActiveDeviceForBoilerSensor(SensorEntity):
         return self._attr_active_device_ids
 
     def __str__(self):
-        return f"VersatileThermostat-{self.name}"
+        return f"{self.name}"
 
     def cancel_listening_nb_active(self):
         """Cancel the listening of underlying VTherm state changes"""
         if self._cancel_listener_nb_active is not None:
             try:
-                self._cancel_listener_nb_active()
+                self._cancel_listener_nb_active()  # pylint: disable=not-callable
             except (ValueError, TypeError):  # the listener could be already cancelled
                 pass
             self._cancel_listener_nb_active = None
@@ -907,10 +966,11 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
     """Representation of the total power of VTherm
     which are active and configured to activate the boiler"""
 
+    _attr_translation_key = "total_power_active_boiler"
+
     def __init__(self, hass: HomeAssistant, unique_id, name, entry_infos) -> None:
         """Initialize the energy sensor"""
         super().__init__(hass, unique_id, name, entry_infos)
-        self._attr_name = "Total power active for boiler"
         self._attr_unique_id = "total_power_active_boiler"
         self._attr_value = self._attr_native_value = None  # default value
         self._cancel_listener_power: callable | None = None
@@ -922,6 +982,10 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
     @property
     def device_class(self) -> SensorDeviceClass | None:
         return SensorDeviceClass.POWER
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        return VersatileThermostatAPI.get_vtherm_api(self._hass).central_power_manager.power_unit
 
     @property
     def suggested_display_precision(self) -> int | None:
@@ -949,7 +1013,7 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
 
         self.cancel_listening_power()
 
-        for entity in component.entities:
+        for entity in list(component.entities):
             if isinstance(entity, BaseThermostat) and entity.is_used_by_central_boiler:
                 self._entities.append(entity)
                 entities_id.append(entity.entity_id)
@@ -999,10 +1063,10 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
                 return
 
             _LOGGER.debug(
-                "%s - calculating the total power of active underlying device for boiler activation. change change from %s to %s",
+                "%s - calculating the total power of active underlying device for boiler activation. mean_power_cycle change from %s to %s",
                 self,
-                old_state,
-                new_state,
+                old_mean_cycle_power,
+                new_mean_cycle_power,
             )
         else:
             _LOGGER.debug(
@@ -1014,12 +1078,15 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
         active_device_ids = []
 
         for entity in self._entities:
+            if getattr(entity, "is_sleeping", False) is True:
+                continue
+
             mean_cycle_power = entity.power_manager.mean_cycle_power
             if mean_cycle_power is None or mean_cycle_power <= 0:
                 continue
 
             _LOGGER.debug(
-                "After examining the mean_cycle_power of %s, mean_cycle_power is %s",
+                "%s - After examining the mean_cycle_power, mean_cycle_power is %s",
                 entity.name,
                 mean_cycle_power,
             )
@@ -1028,7 +1095,11 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
 
             total_active_power += mean_cycle_power
 
-        self._attr_native_value = total_active_power
+        central_power_manager = VersatileThermostatAPI.get_vtherm_api(self._hass).central_power_manager
+        self._attr_native_value = central_power_manager.from_watts(
+            total_active_power,
+            central_power_manager.power_unit,
+        )
         self._attr_active_device_ids = active_device_ids
 
         self.async_write_ha_state()
@@ -1040,7 +1111,7 @@ class TotalPowerActiveDeviceForBoilerSensor(NbActiveDeviceForBoilerSensor):
         return self._attr_active_device_ids
 
     def __str__(self):
-        return f"VersatileThermostat-{self.name}"
+        return f"{self.name}"
 
     @overrides
     async def async_will_remove_from_hass(self) -> None:

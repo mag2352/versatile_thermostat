@@ -12,7 +12,9 @@ Zachowanie tej funkcji jest następujące:
 3. Jeśli dostępna jest rezerwa mocy, a część termostatów została odłączona, centralne sterowanie ponownie włączy tyle urządzeń, ile to możliwe, zaczynając od tych najbardziej oddalonych od wartości zadanej (w momencie ich odłączenia).
 4. Gdy termostat się uruchamia, wykonywana jest kontrola, czy zadeklarowana moc jest dostępna. Jeśli nie, termostat zostaje przełączony w tryb ograniczenia (`shed mode`).
 
-**Ostrzeżenie:** To nie jest **funkcja bezpieczna**, lecz mechanizm optymalizacji zużycia energii kosztem pewnego pogorszenia ogrzewania. Nadmierne zużycie energii nadal jest możliwe, w zależności od częstotliwości aktualizacji czujnika zużycia oraz rzeczywistej mocy pobieranej przez urządzenia. Zawsze należy zachować margines bezpieczeństwa.
+**Ostrzeżenie:** To nie jest **funkcja bezpieczeństwa**, lecz mechanizm optymalizacji zużycia energii kosztem pewnego pogorszenia ogrzewania. Nadmierne zużycie energii nadal jest możliwe, w zależności od częstotliwości aktualizacji czujnika zużycia oraz rzeczywistej mocy pobieranej przez urządzenia. Zawsze należy zachować margines bezpieczeństwa.
+
+W termostacie _VTherm_ typu `over_switch` sterującym wieloma grzejnikami każdy przekaźnik jest oceniany osobno. Przekaźnik, którego stan w Home Assistant wskazuje już grzanie, nie dodaje krańcowej mocy rozruchowej. Pomiar może być opóźniony: jeśli pobór mocy tego grzejnika nie jest jeszcze w nim uwzględniony, skonfigurowany próg może zostać tymczasowo przekroczony. Ta funkcja programowa nie zastępuje zabezpieczenia elektrycznego i nie chroni wyłącznika nadprądowego.
 
 ### Przykład użycia:
 1. Masz licznik energii elektrycznej ograniczony do 11 kW,
@@ -38,7 +40,7 @@ Wymagane elementy konfiguracji:
 2. **Identyfikator encji** sensora maksymalnej dopuszczalnej mocy,
 3. **Temperatura**, która ma być zastosowana, jeśli aktywowana zostanie redukcja obciążenia.
 
-Upewnij się, że wszystkie wartości mocy używają tych samych jednostek (np. kW lub W).
+Jednostki mocy można konfigurować niezależnie. Dla mocy urządzenia każdego VTherm wybierz W lub kW. W konfiguracji centralnej wybierz W, kW lub Automatycznie; tryb Automatycznie używa jednostki zadeklarowanej przez każdy czujnik centralny. Wartości są wewnętrznie normalizowane do W, dlatego można bezpiecznie łączyć W i kW.
 Posiadanie **sensora maksymalnej dopuszczalnej mocy** pozwala na dynamiczną modyfikację wartości maksymalnej mocy przy użyciu harmonogramu lub automatyzacji.
 
 Ze względu na scentralizowaną redukcję obciążenia nie jest możliwe nadpisanie wartości senssorów zużycia i maksymalnego zużycia na poszczególnych termostatatch. Konfiguracja musi być wykonana w ustawieniach głównych (patrz: [Konfiguracja Centralna](./creation.md#centralized-configuration)).
@@ -50,5 +52,5 @@ Ze względu na scentralizowaną redukcję obciążenia nie jest możliwe nadpisa
 > 2. Zawsze zachowuj margines bezpieczeństwa, ponieważ maksymalna moc może być chwilowo przekroczona w oczekiwaniu na kolejne obliczenie cyklu lub przez niekontrolowane urządzenia.
 > 3. Jeśli nie chcesz korzystać z tej funkcji, odznacz ją w menu 'Funkcje'.
 > 4. Jeśli pojedynczy termostat steruje wieloma urządzeniami, zadeklarowane zużycie energii grzewczej powinno odpowiadać całkowitej mocy wszystkich urządzeń.
-> 5. Jeśli korzystasz z karty interfejsu Versatile Thermostat UI Card (patrz [tutaj](additions.md#better-with-the-versatile-thermostat-ui-card)), redukcja obciążenia jest reprezentowane jako: ![load shedding](images/power-exceeded-icon.png).
+> 5. Jeśli korzystasz z karty interfejsu _Versatile Thermostat UI Card_ (patrz: [tutaj](additions.md#better-with-the-versatile-thermostat-ui-card)), redukcja obciążenia jest reprezentowana jako: ![load shedding](images/power-exceeded-icon.png).
 > 6. Może wystąpić opóźnienie do 20 sekund pomiędzy otrzymaniem nowej wartości z czujnika zużycia energii a uruchomieniem redukcji obciążenia dla termostatu. Opóźnienie to zapobiega przeciążeniu Home Assistanta, jeśli aktualizacje zużycia są bardzo częste.

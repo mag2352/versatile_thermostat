@@ -8,7 +8,7 @@ from custom_components.versatile_thermostat.auto_tpi_manager import (
     AutoTpiManager,
     AutoTpiState,
 )
-from custom_components.versatile_thermostat.prop_algorithm import PropAlgorithm
+from custom_components.versatile_thermostat.prop_algo_tpi import TpiAlgorithm
 from custom_components.versatile_thermostat.const import CONF_TPI_COEF_INT, CONF_TPI_COEF_EXT
 
 class ThermalModel:
@@ -32,6 +32,12 @@ def mock_hass():
     hass = MagicMock()
     hass.config.path = MagicMock(return_value="/tmp/test_path")
     hass.loop = asyncio.get_event_loop()
+    
+    # Avoid RuntimeWarning: coroutine never awaited
+    def fake_create_task(coro):
+        return hass.loop.create_task(coro)
+    hass.async_create_task = MagicMock(side_effect=fake_create_task)
+    
     return hass
 
 @pytest.fixture
@@ -82,13 +88,9 @@ async def test_auto_tpi_convergence_simulation(mock_hass, mock_store, mock_confi
     manager.state.autolearn_enabled = True
     manager.state.max_capacity_heat = REAL_CAPACITY 
     
-    prop_algo = PropAlgorithm(
-        function_type="tpi",
+    prop_algo = TpiAlgorithm(
         tpi_coef_int=0.3, 
         tpi_coef_ext=0.01,
-        cycle_min=10,
-        minimal_activation_delay=0,
-        minimal_deactivation_delay=0,
         vtherm_entity_id="climate.sim_test"
     )
     
@@ -101,10 +103,11 @@ async def test_auto_tpi_convergence_simulation(mock_hass, mock_store, mock_confi
     print(f"\n{'Cycle':<5} | {'RoomT':<8} | {'ExtT':<8} | {'Power%':<8} | {'Kint':<8} | {'Kext':<8} | {'Status'}")
     print("-" * 80)
 
-    with patch("custom_components.versatile_thermostat.auto_tpi_manager.datetime") as mock_datetime, \
+    with patch("custom_components.versatile_thermostat.auto_tpi_manager.dt_util") as mock_dt_util, \
          patch("custom_components.versatile_thermostat.auto_tpi_manager.async_call_later") as mock_call_later:
         
-        mock_datetime.now.side_effect = lambda: sim_time
+        mock_dt_util.now.side_effect = lambda: sim_time
+        mock_dt_util.as_local.side_effect = lambda x: x
         
         async def data_provider():
             await manager.update(
@@ -117,14 +120,21 @@ async def test_auto_tpi_convergence_simulation(mock_hass, mock_store, mock_confi
             
             new_params = await manager.calculate()
             if new_params:
-                # Correctly update PropAlgorithm with new learned coefficients using CONSTANT keys
+                # Correctly update TpiAlgorithm with new learned coefficients using CONSTANT keys
                 kint = new_params.get(CONF_TPI_COEF_INT)
                 kext = new_params.get(CONF_TPI_COEF_EXT)
                 
                 # Check directly vs Manager state to ensure we are in sync
-                assert kint == manager.state.coeff_indoor_heat
-                assert kext == manager.state.coeff_outdoor_heat
-                
+                # NOTE: During bootstrap, kint/kext will be aggressive (1.0/0.1) while state remains at initial (0.3/0.01)
+                # until capacity is learned. So we check equality only if NOT in bootstrap.
+                if manager.is_in_bootstrap:
+                     # Verify we are using aggressive defaults
+                     assert kint == 1.0
+                     assert kext == 0.1
+                else: 
+                     assert kint == manager.state.coeff_indoor_heat
+                     assert kext == manager.state.coeff_outdoor_heat
+
                 if kint is not None and kext is not None:
                      prop_algo.update_parameters(tpi_coef_int=kint, tpi_coef_ext=kext)
             
@@ -144,27 +154,48 @@ async def test_auto_tpi_convergence_simulation(mock_hass, mock_store, mock_confi
                 "hvac_mode": "heat"
             }
         
-        manager._data_provider = data_provider
-        manager._event_sender = MagicMock()
-        await manager.start_cycle_loop(data_provider, manager._event_sender)
-        
         for i in range(50):
+            # Calculate power for this cycle using current state
             cycle_data = await data_provider()
             power = cycle_data["on_percent"]
-            
-            # Step Physics
-            model.step(power, 10.0)
+            on_time_sec = cycle_data["on_time_sec"]
+            off_time_sec = cycle_data["off_time_sec"]
+
+            # Start cycle (marks cycle_start_date = sim_time via dt_util.now())
+            await manager.on_cycle_started(
+                on_time_sec=on_time_sec,
+                off_time_sec=off_time_sec,
+                on_percent=power,
+                hvac_mode="heat",
+            )
+
+            # Advance simulation time (end of cycle)
             sim_time += timedelta(minutes=10)
-            
-            # Tick Manager
-            await manager._tick()
-            
+
+            # Step Physics (Simulate 10 minute cycle)
+            model.step(power, 10.0)
+
+            # Update manager with end-of-cycle temperatures so learning sees
+            # the post-cycle room temp (mirrors production where control_heating
+            # is called at each heartbeat, keeping _current_temp_in up to date)
+            await manager.update(
+                room_temp=model.room_temp,
+                ext_temp=model.ext_temp,
+                target_temp=target_temp,
+                hvac_mode="heat",
+                is_overpowering_detected=False
+            )
+
+            # Complete cycle — dt_util.now() now returns sim_time + 10min,
+            # so elapsed ≈ cycle_min → valid learning boundary
+            await manager.on_cycle_completed()
+
             status = manager.state.last_learning_status
             print(f"{i+1:<5} | {model.room_temp:<8.3f} | {model.ext_temp:<8.1f} | {power:<8.2f} | {manager.state.coeff_indoor_heat:<8.3f} | {manager.state.coeff_outdoor_heat:<8.3f} | {status}")
-            
+
             # Perturbation: Drop external temp to force Kext learning
             if i == 30:
-                 model.ext_temp = 0.0
+                model.ext_temp = 0.0
 
         final_kext = manager.state.coeff_outdoor_heat
         final_kint = manager.state.coeff_indoor_heat
@@ -181,4 +212,8 @@ async def test_auto_tpi_convergence_simulation(mock_hass, mock_store, mock_confi
         
         # 3. Room temp should be stable near target (within 0.1 deg)
         assert abs(model.room_temp - target_temp) < 0.1, f"Room temp {model.room_temp} should be close to target {target_temp}"
+
+        # Cleanup
+        pass
+
 

@@ -5,7 +5,7 @@
     - [Samo-regulace přímým ovládáním ventilu](#samo-regulace-přímým-ovládáním-ventilu)
     - [Jiná samo-regulace](#jiná-samo-regulace)
       - [Samo-regulace v expertním režimu](#samo-regulace-v-expertním-režimu)
-  - [Shrnutí algoritmu auto-regulace](#shrnutí-algoritmu-auto-regulace)
+  - [Shrnutí algoritmu samo-regulace](#shrnutí-algoritmu-samo-regulace)
 
 Máte možnost aktivovat funkci samo-regulace pouze pro _VTherm_ typu `over_climate`.
 
@@ -16,8 +16,6 @@ Obecně existují dva případy:
 ## Konfigurace
 
 ### Samo-regulace přímým ovládáním ventilu
-
--- this § is not updated since v 8.0. Please see the English version --
 
 Tento typ samo-regulace, nazývaný `Přímé ovládání ventilu`, vyžaduje:
 1. Entitu typu `climate`, která je zahrnuta v podkladových zařízeních _VTherm_.
@@ -56,6 +54,9 @@ Ve druhém případě Versatile Thermostat vypočítá offset na základě násl
 3. Rozdíl mezi venkovní teplotou a setpointem.
 
 Tyto tři informace jsou kombinovány pro výpočet offsetu, který bude přidán k aktuálnímu setpointu a odeslán podkladové klimatizaci.
+
+> ![Tip](images/tips.png) _*Poznámka*_
+> Samo-regulace se uplatní pouze tehdy, když je _VTherm_ v režimu `Topení` nebo `Chlazení`. V jakémkoli jiném režimu (například `Odvlhčování` nebo `Pouze ventilátor`) je samo-regulace vypnuta a podkladovému zařízení je odeslán původní (neregulovaný) setpoint.
 
 Samo-regulace je konfigurována s:
 1. Stupněm regulace:

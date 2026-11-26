@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument, line-too-long
 
 import logging
+from vtherm_api.log_collector import get_vtherm_logger
 
 from homeassistant.core import (
     HomeAssistant,
@@ -22,7 +23,7 @@ from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .vtherm_api import VersatileThermostatAPI
+from .vtherm_central_api import VersatileThermostatAPI
 from .base_entity import VersatileThermostatBaseEntity
 from .const import (
     DOMAIN,
@@ -32,6 +33,7 @@ from .const import (
     CONF_USE_PRESENCE_FEATURE,
     CONF_USE_MOTION_FEATURE,
     CONF_USE_WINDOW_FEATURE,
+    CONF_USE_HEATING_FAILURE_DETECTION_FEATURE,
     CONF_THERMOSTAT_TYPE,
     CONF_THERMOSTAT_CENTRAL_CONFIG,
     CONF_USE_CENTRAL_BOILER_FEATURE,
@@ -39,7 +41,7 @@ from .const import (
     EventType,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 async def async_setup_entry(
@@ -48,12 +50,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VersatileThermostat binary sensors with config flow."""
-    _LOGGER.debug(
-        "Calling async_setup_entry entry=%s, data=%s", entry.entry_id, entry.data
-    )
-
     unique_id = entry.entry_id
     name = entry.data.get(CONF_NAME)
+    _LOGGER.debug("%s - Calling async_setup_entry entry=%s, data=%s", name, entry.entry_id, entry.data)
+
     vt_type = entry.data.get(CONF_THERMOSTAT_TYPE)
 
     entities = None
@@ -79,6 +79,8 @@ async def async_setup_entry(
             entities.append(PresenceBinarySensor(hass, unique_id, name, entry.data))
         if entry.data.get(CONF_USE_POWER_FEATURE):
             entities.append(OverpoweringBinarySensor(hass, unique_id, name, entry.data))
+        if entry.data.get(CONF_USE_HEATING_FAILURE_DETECTION_FEATURE):
+            entities.append(HeatingFailureBinarySensor(hass, unique_id, name, entry.data))
 
     if entities:
         async_add_entities(entities, True)
@@ -86,6 +88,9 @@ async def async_setup_entry(
 
 class SafetyBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     """Representation of a BinarySensor which exposes the security state"""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "safety_state"
 
     def __init__(
         self,
@@ -96,7 +101,6 @@ class SafetyBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     ) -> None:
         """Initialize the SafetyState Binary sensor"""
         super().__init__(hass, unique_id, name)
-        self._attr_name = "Safety state"
         self._attr_unique_id = f"{self._device_name}_safety_state"
         self._attr_is_on = False
 
@@ -123,8 +127,51 @@ class SafetyBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
             return "mdi:shield-check-outline"
 
 
+class HeatingFailureBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
+    """Representation of a BinarySensor which exposes the heating failure state"""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "heating_failure_state"
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        unique_id,
+        name,  # pylint: disable=unused-argument
+        entry_infos,
+    ) -> None:
+        """Initialize the HeatingFailure Binary sensor"""
+        super().__init__(hass, unique_id, name)
+        self._attr_unique_id = f"{self._device_name}_heating_failure_state"
+        self._attr_is_on = False
+
+    @callback
+    async def async_my_climate_changed(self, event: Event = None):
+        """Called when my climate have change"""
+
+        old_state = self._attr_is_on
+        self._attr_is_on = self.my_climate.heating_failure_detection_manager.is_failure_detected
+        if old_state != self._attr_is_on:
+            self.async_write_ha_state()
+        return
+
+    @property
+    def device_class(self) -> BinarySensorDeviceClass | None:
+        return BinarySensorDeviceClass.PROBLEM
+
+    @property
+    def icon(self) -> str | None:
+        if self._attr_is_on:
+            return "mdi:radiator-off"
+        else:
+            return "mdi:radiator"
+
+
 class OverpoweringBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     """Representation of a BinarySensor which exposes the overpowering state"""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "overpowering_state"
 
     def __init__(
         self,
@@ -135,7 +182,6 @@ class OverpoweringBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity
     ) -> None:
         """Initialize the OverpoweringState Binary sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Overpowering state"
         self._attr_unique_id = f"{self._device_name}_overpowering_state"
         self._attr_is_on = False
 
@@ -165,6 +211,9 @@ class OverpoweringBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity
 class WindowBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     """Representation of a BinarySensor which exposes the window state"""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "window_state"
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -174,7 +223,6 @@ class WindowBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     ) -> None:
         """Initialize the WindowState Binary sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Window state"
         self._attr_unique_id = f"{self._device_name}_window_state"
         self._attr_is_on = False
 
@@ -215,6 +263,9 @@ class WindowBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
 class MotionBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     """Representation of a BinarySensor which exposes the motion state"""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "motion_state"
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -224,7 +275,6 @@ class MotionBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     ) -> None:
         """Initialize the MotionState Binary sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Motion state"
         self._attr_unique_id = f"{self._device_name}_motion_state"
         self._attr_is_on = False
 
@@ -255,6 +305,9 @@ class MotionBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
 class PresenceBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     """Representation of a BinarySensor which exposes the presence state"""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "presence_state"
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -264,7 +317,6 @@ class PresenceBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     ) -> None:
         """Initialize the PresenceState Binary sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Presence state"
         self._attr_unique_id = f"{self._device_name}_presence_state"
         self._attr_is_on = False
 
@@ -296,6 +348,9 @@ class PresenceBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
 class WindowByPassBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity):
     """Representation of a BinarySensor which exposes the Window ByPass state"""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "window_bypass_state"
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -305,7 +360,6 @@ class WindowByPassBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity
     ) -> None:
         """Initialize the WindowByPass Binary sensor"""
         super().__init__(hass, unique_id, entry_infos.get(CONF_NAME))
-        self._attr_name = "Window bypass"
         self._attr_unique_id = f"{self._device_name}_window_bypass_state"
         self._attr_is_on = False
 
@@ -335,6 +389,9 @@ class WindowByPassBinarySensor(VersatileThermostatBaseEntity, BinarySensorEntity
 class CentralBoilerBinarySensor(BinarySensorEntity):
     """Representation of a BinarySensor which exposes the Central Boiler state"""
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "central_boiler_state"
+
     _entity_component_unrecorded_attributes = BinarySensorEntity._entity_component_unrecorded_attributes.union(  # pylint: disable=protected-access
         frozenset({"is_central_boiler_configured", "is_central_boiler_ready", "central_boiler_manager"})
     )
@@ -348,7 +405,6 @@ class CentralBoilerBinarySensor(BinarySensorEntity):
     ) -> None:
         """Initialize the CentralBoiler Binary sensor"""
         self._config_id = unique_id
-        self._attr_name = "Central boiler"
         self._attr_unique_id = "central_boiler_state"
         self._attr_is_on = False
         self._device_name = entry_infos.get(CONF_NAME)
@@ -383,6 +439,7 @@ class CentralBoilerBinarySensor(BinarySensorEntity):
 
         api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api(self._hass)
         api.central_boiler_manager.register_central_boiler(self)
+        self._attr_is_on = api.central_boiler_manager.is_detected
 
         # Listen to central boiler events
         self.async_on_remove(
@@ -414,8 +471,9 @@ class CentralBoilerBinarySensor(BinarySensorEntity):
         """Update the custom extra attributes for the entity"""
         self._attr_extra_state_attributes = {"central_boiler_state": STATE_ON if self._attr_is_on else STATE_OFF}
         api: VersatileThermostatAPI = VersatileThermostatAPI.get_vtherm_api()
-        cb_manager = api.central_boiler_manager
-        cb_manager.add_custom_attributes(self._attr_extra_state_attributes)
+        if api is None:
+            return
+        api.central_boiler_manager.add_custom_attributes(self._attr_extra_state_attributes)
 
     def __str__(self):
         return f"VersatileThermostat-{self.name}"

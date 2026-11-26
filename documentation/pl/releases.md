@@ -1,6 +1,92 @@
 # Informacje o wydaniach
 
-![New](images/new-icon.png)
+## Wydanie 9.3 - wersja stabilna
+> 1. **Wykrywanie zablokowanych zaworów**: Znaczne ulepszenie wykrywania awarii ogrzewania. Gdy anomalia zostanie wykryta na termostatach typu `over_climate_valve`, termostat diagnozuje teraz, czy problem jest spowodowany zablokowanym zaworem TRV (zablokowany otwarty lub zamknięty), porównując stan poleceń ze stanem rzeczywistym. Informacja ta - `root_cause` - jest wysyłana w zdarzeniu anomalii, umożliwiając podjęcie odpowiednich działań (powiadomienie, odzyskanie zaworu itp.). Więcej informacji [tutaj](documentation/pl/feature-heating-failure-detection.md),
+> 2. **Automatyczne ponowne zablokowanie po odblokowaniu**: Dodano parametr `auto_relock_sec` do funkcji blokady. Gdy jest skonfigurowany, termostat automatycznie się blokuje ponownie po określonej liczbie sekund po odblokowaniu. Tę funkcję można całkowicie wyłączyć, ustawiając wartość 0. Domyślnie automatyczne ponowne zablokowanie jest ustawione na 30 sekund dla zwiększonego bezpieczeństwa. Więcej informacji [tutaj](documentation/pl/feature-lock.md),
+> 3. **Ponowne wysyłanie poleceń**: Nowa funkcja do automatycznego wykrywania i korygowania rozbieżności między pożądanym stanem termostatu a rzeczywistym stanem urządzeń podrzędnych. Jeśli polecenie nie jest prawidłowo zastosowane do urządzenia, jest wysyłane ponownie. Zwiększa to niezawodność systemu w niestabilnych środowiskach lub z zawodnymi urządzeniami. Więcej informacji [tutaj](documentation/pl/feature-advanced.md),
+> 4. **Przywrócenie ustawienia czasowego po ponownym uruchomieniu**: Skonfigurowane ustawienie czasowe jest teraz prawidłowo przywracane po ponownym uruchomieniu termostatu lub Home Assistant. To ustawienie będzie działać normalnie po ponownym uruchomieniu. Więcej informacji [tutaj](documentation/pl/feature-timed-preset.md),
+> 5. **Zwiększona precyzja kontroli mocy**: Próg aktywacji kotła (`power_activation_threshold`) akceptuje teraz wartości dziesiętne (0,1, 0,5 itp.) dla dokładniejszej kontroli mocy aktywacji. Zapewnia to większą elastyczność w optymalizacji zużycia energii. Więcej informacji [tutaj](documentation/pl/feature-power.md),
+> 6. **Ulepszenia dostępności czujników**: Lepsza obsługa określania dostępności czujnika temperatury przy użyciu metadanych `last_updated` Home Assistant, ulepszone wykrywanie utraty sygnału czujnika,
+> 7. **Haki urządzeń podrzędnych dla wtyczek**: menedżerowie funkcji z wtyczek mogą teraz śledzić polecenia wysyłane do urządzeń podrzędnych (zmiana trybu HVAC, polecenia zaworu, moc żądana i zastosowana przez harmonogram cykli) dzięki opcjonalnym hakom `vtherm_api` 0.9.0. Nie ma nic do skonfigurowania w VTherm. Więcej informacji [tutaj](https://github.com/jmcollin78/versatile_thermostat/issues/2181).
+
+## Wydanie 9.2
+> 1. Nowy sposób zarządzania cyklami ogrzewania/zatrzymania dla VTherm `na przełączniku`. Obecny algorytm ma pewną zwłokę czasową, a pierwsze cykle nie są optymalne. To zaburza TPI i w szczególności algorytm auto-TPI. Nowy `Terminarz cykli` rozwiązuje te niedogodności. Ta zmiana jest dla Ciebie całkowicie przezroczysta.
+> 2. Kolektor dzienników. Twoje żądania wsparcia często zawodzą ze względu na brak możliwości dostarczenia dzienników w odpowiednim okresie, skoncentrowanych na termostacie z błędem i na właściwym poziomie dziennika. To kwestia błędów szczególnie trudno reprodukowalnych. Kolektor dzienników ma na celu rozwiązanie tego problemu. Zbiera on dzienniki w tle na maksymalnym poziomie szczegółowości, a akcja (dawniej usługa) umożliwia ich wyodrębnienie do pliku. Można je pobrać i dołączyć do żądania wsparcia. Analizator dzienników powiązany ze stroną internetową - uruchomiony w wersji 9.1 (patrz poniżej) - dostosowuje się tak, aby mógł przetwarzać te dzienniki. Więcej informacji na temat kolektora dzienników [tutaj](documentation/pl/feature-logs-collector.md).
+> 3. Stabilizacja wersji 9.x. Wersja główna 9 przyniosła wiele zmian, które spowodowały kilka anomalii. Ta wersja zawiera ostatnie poprawki związane z wersją 9.
+
+## Wydanie 9.1
+> 1. Nowe logo. Zainspirowane pracami @Krzysztonek (zobacz [tutaj](https://github.com/jmcollin78/versatile_thermostat/pull/1598)), VTherm korzysta z nowej funkcji wprowadzonej w [HA 2026.03](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api/), aby zmienić swoje logo. Cały zespół ma nadzieję, że nowa wersja przypadnie Wam do gustu. Miłego korzystania!
+> 2. Strona internetowa stworzona przez @bontiv rozwiązuje jeden z głównych problemów VTherm: dokumentację. Strona umożliwia także analizę logów! Przekaż swoje logi (w trybie debug), a będziesz mógł je analizować, przybliżać widok dla konkretnego termostatu, wybranego okresu, filtrować interesujące dane itd. Zachęcamy do odkrycia tej pierwszej wersji tutaj: [Versatile Thermostat Web site](https://www.versatile-thermostat.org/). Ogromne podziękowania dla @bontiv za tę świetną realizację.
+> 3. Oficjalna publikacja funkcji auto-TPI. Funkcja ta oblicza optymalne wartości współczynników dla algorytmu [TPI](documentation/fr/algorithms.md#lalgorithme-tpi). Warto podkreślić niesamowitą pracę @KipK oraz @gael1980 w tym zakresie. Jeśli chcesz z niej korzystać, koniecznie przeczytaj dokumentację.
+> 4. VTherm opiera się teraz na stanie raportowanym przez urządzenia podrzędne w HA. Dopóki wszystkie urządzenia podrzędne nie mają znanego stanu w HA, VTherm pozostaje wyłączony.
+
+## Wydanie 8.6
+> 1. Dodanie parametru `max_opening_degrees` dla termostatów VTherm typu `over_climate_valve` pozwalającego ograniczyć maksymalny procent otwarcia każdego zaworu w celu kontrolowania przepływu gorącej wody i optymalizacji zużycia energii.
+> 2. Dodanie funkcji ponownej kalibracji zaworów dla _VTherm_ `over_climate_valve`, pozwalającej wymusić maksymalne otwarcie, a następnie maksymalne zamknięcie w celu próby ponownej kalibracji TRV. Więcej informacji [tutaj](documentation/pl/feature-recalibrate-valves.md).
+
+## Wydanie 8.5
+> 1. Dodanie wykrywania awarii ogrzewania dla termostatów VTherm używających algorytmu TPI. Ta funkcja wykrywa dwa typy anomalii:
+>    - **awaria ogrzewania**: grzejnik mocno grzeje (wysoki on_percent), ale temperatura nie rośnie,
+>    - **awaria chłodzenia**: grzejnik nie grzeje (on_percent równe 0), ale temperatura nadal rośnie.
+>
+> Anomalie te mogą wskazywać na otwarte okno, uszkodzony grzejnik lub zewnętrzne źródło ciepła. Funkcja wysyła zdarzenia, które mogą być używane do wyzwalania automatyzacji (powiadomienia, alerty itp.). Więcej informacji [tutaj](documentation/pl/feature-heating-failure-detection.md).
+
+## Wydanie 8.4
+> 1. Dodanie eksperymentalnej funkcji automatyzacji algorytmu TPI. Ta nowa funkcja pozwala na automatyczne obliczanie najlepszych współczynników dla algorytmu TPI. Więcej informacji znajdziesz [tutaj](documentation/pl/feature-autotpi.md).
+> 2. Dodanie funkcji synchronizacji temperatury dla urządzenia sterowanego w trybie `na_klimacie`. W zależności od możliwości urządzenia, _VTherm_ może sterować jednostką kalibracji offsetu lub bezpośrednio zewnętrzną encją temperatury. Więcej informacji znajduje się [tutaj](documentation/pl/feature-sync_device_temp.md).
+> 3. Dodanie funkcji _**presetu czasowego**_, która umożliwia wybranie presetu na z góry określony czas i powrót do poprzedniego po upływie wkazanego opóźnienia. Nowa funkcja jest szczegółowo opisana [tutaj](documentation/pl/feature-timed-preset.md).
+>
+
+## Wydanie 8.3
+> 1. Dodanie konfigurowalnego opóźnienia przed załączeniem kotła centralnego.
+> 2. Dodanie wyzwalacza kotła centralnego, gdy całkowita moc aktywowana przekroczy założony próg. Aby ta funkcja działała, musisz:
+> - skonfigurować próg mocy, który uruchomi kocioł. Jest to nowa jednostka dostępna w urządzeniu _„Konfiguracja centralna”_.
+> - skonfigurować wartości mocy termostatów _VTherm_. Można to zrobić na pierwszym ekranie konfiguracji każdego termostatu _VTherm_.
+> - zaznaczyć pole „Używane przez kocioł centralny”.
+>
+> Za każdym razem, gdy VTherm jest aktywowany, jego skonfigurowana moc jest dodawana do sumy, a w przypadku przekroczenia progu, kocioł centralny zostanie uruchomiony po opóźnieniu skonfigurowanym w kroku 1.
+>
+> Poprzedni licznik liczby aktywowanych urządzeń i jego progu nadal istnieją. Aby wyłączyć jeden z progów (próg mocy lub próg liczby aktywnych urządzeń), ustaw jego wartość na zero (`0`). Po przekroczeniu któregokolwiek z dwóch niezerowych progów kocioł zostanie uruchomiony. Dlatego pomiędzy dwoma progami stosuje się alternatywę logiczną _'lub'_.
+>
+> Więcej informacji znajdziesz [tutaj](documentation/pl/feature-central-boiler.md).
+
+## Wydanie 8.2
+> Dodano opcjonalną funkcję blokowania/odblokowania termostatu _*VTherm*_ za pomocą kodu PIN. Więcej informacji na ten temat znajduje się [tutaj](documentation/pl/feature-lock.md).
+
+
+## Wydanie 8.1
+> - Dla `termostatu na klimacie` z bezpośrednim sterowaniem zaworem, do istniejącego już parametru `minimum_opening_degrees` dodano dwa nowe, następujące parametry:
+>    - `opening_threshold`: wartość otwarcia zaworu, poniżej której zawór powinien być uważany za zamknięty (wówczas będzie obowiązywał parametr `max_closing_degree`),
+>    - `max_closing_degree`: maksymalna wartość stopnia zamknięcia zaworu. Powyżej tej wartości zawór nigdy nie zostanie zamknięty. Ustaw wartość tego parametru na `100`, aby całkowicie zamknąć zawór, jeśli ogrzewanie jest już niepotrzebne,
+>    - `minimum_opening_degrees`: minimalna wartość stopnia otwarcia zaworu dla każdego urządzenia bazowego po przekroczeniu progu `opening_threshold`, rozdzielona przecinkami. Domyślna wartość parametru: `0`. Przykład: 20, 25, 30. Po rozpoczęciu grzania zawór zacznie się otwierać z tą wartością i będzie się stale zwiększać, dopóki będzie potrzebne dalsze ogrzewanie.
+>
+> ![alt text](images/opening-degree-graph.png)
+>
+> Więcej informacji na ten temat można uzyskać, przegądając wątek dyskusyjny [#1220](https://github.com/jmcollin78/versatile_thermostat/issues/1220).
+
+
+## Wydanie główne 8.0
+
+Ta wersja wymaga **szczególnej uwagi**. Przebudowano w niej znaczną część wewnętrznych mechanizmów integracji *Versatile Thermostat*, wprowadzając kilka nowych funkcji, a także znacząco poprawiając wydajność tych już działających:
+> 1. `Stan żądany` / `stan bieżący`: termostat _VTherm_ ma teraz 2 stany. `Stan żądany` to stan oczekiwany przez użytkownika (lub harmonogram). `Stan bieżący` to stan aktualny termostatu _VTherm_. Ten ostatni zależy od różnych funkcji termostatu _VTherm_. Np. użytkownik może zażądać (`stan żądany`) włączenia ogrzewania z ustawieniem Komfort, ale ponieważ wykryto otwarte okno, termostat _VTherm_ jest w rzeczywistości wyłączony. To podwójne zarządzanie zawsze zachowuje żądanie użytkownika i aplikuje wyniki różnych funkcji jako odpowiedź na żądanie użytkownika, aby w efekcie uzyskać `stan bieżący`. Takie rozwiązanie lepiej radzi sobie z przypadkami, gdy wiele funkcji chce oddziaływać na stan termostatu (np. otwieranie okna i wyłączanie zasilania). Zapewnia również powrót do pierwotnego `stanu żądanego`, gdy nie ma już żadnych innych zdarzeń, które mogłyby oddziaływać na termostat (np. otwieranie okna i wyłączanie zasilania),
+> 2. `Filtrowanie czasu`: operacja filtrowania czasu została znacznie poprawiona. Filtrowanie czasu zapobiega wysyłaniu zbyt wielu poleceń do urządzenia, co mogłoby prowadzić do nadmiernego zużycia baterii (np. termostatu zasilanego bateryjnie), a także zbyt częstej zmiany ustawień (pompy ciepła, pieca na pellet, ogrzewania podłogowego itp.). Nowa funkcja działa teraz następująco: jawne żądania użytkownika (lub harmonogramu) są zawsze natychmiast uwzględniane i **nie są one filtrowane**. Potencjalnie filtrowane są tylko zmiany związane z warunkami zewnętrznymi (np. temperaturą w pomieszczeniu). Filtrowanie polega na ponownym wysłaniu żądanego polecenia w późniejszym czasie, a nie na jego ignorowaniu, jak to miało miejsce dotychczas. Parametr `auto_regulation_dtemp` umożliwia dostosowanie opóźnienia.
+> 3. Ulepszenie parametru `hvac_action`: parametr `hvac_action` odzwierciedla aktualny stan aktywacji sterowanego urządzenia. W przypadku typu `termostat na przełączniku` odzwierciedla on stan aktywacji przełącznika, w przypadku `termostatu na zaworze` pozostaje aktywny, gdy otwarcie zaworu jest większe, niż minimalne (lub 0, jeśli nie jest skonfigurowany). W przypadku `termostatu na klimacie` odzwierciedla on parametr `hvac_action` klimatu bazowego, jeśli jest dostępny, lub - w przeciwnym razie - jego symulację.
+> 4. `Atrybuty własne`: organizacja atrybutów niestandardowych dostępnych w `Narzędzia deweloperskie -> Stany` została podzielona na sekcje w zależności od typu termostatu _VTherm_ i każdej aktywowanej funkcji.
+> 5. `Redukcja mocy`: algorytm redukcji mocy uwzględnia teraz wyłączenie urządzeń między dwoma pomiarami zużycia energii w domu.
+Załóżmy, że co 5 minut otrzymujesz informację zwrotną o zużyciu energii. Jeśli grzejnik zostanie wyłączony między dwoma pomiarami, włączenie nowego może zostać autoryzowane. Wcześniej uwzględniano tylko włączenia między dwoma pomiarami. Tak jak poprzednio, kolejny komunikat dotyczący zużycia energii prawdopodobnie spowoduje większą lub mniejszą redukcję mocy.
+> 6. `AutoSTART/autoSTOP`: funkcja autoSTART/autoSTOP jest przydatna tylko dla typu `termostatu na klimacie` bez bezpośredniego sterowania zaworem. Opcja ta została usunięta z pozostałych typów termostatów.
+> 7. Karta `VTherm UI Card`: wszystkie te modyfikacje pozwoliły na znaczną ewolucję karty `VTherm UI Card`, integrując komunikaty wyjaśniające aktualny stan (dlaczego mój VTherm ma taką temperaturę docelową?) oraz czy trwa filtrowanie czasu – w związku z czym aktualizacja stanu bazowego jest opóźniona.
+> 8. Ulepszenia `logów`: ulepszono logi, aby znacząco uprościć debugowanie. Logi w formacie `---> NOWE ZDARZENIE: VersatileThermostat-Inversed ...` informują o zdarzeniu, wpływającym na stan termostatu _VTherm_.
+>
+> ⚠️ **Ostrzeżenie**
+>
+> Ta wersja integracji zawiera zasadnicze zmiany w stosunku do wersji poprzedniej:
+> - zmianie ulega nazwa zdarzenia z `versatile_thermostat_security_event` na `versatile_thermostat_safety_event`. Jeśli Twoja automatyzacja wykorzystuje to zdarzenie, konieczna jest jej aktualizacja,
+> - atrybuty własne zostały całkowicie zreorganizowane. Wymagana jest odpowiednia aktualizacja Twoich automatyzacji lub szablonów Jinja, korzystających z tych atrybutów,
+> - karta [VTherm UI Card](documentation/pl/additions.md#versatile-thermostat-ui-card) musi być zaktualizowana co najmniej do wersji `v2.0`, aby zachować kompatybilność,
+>
+> **Pomimo 342 automatycznych testów tej integracji i maksymalnej staranności włożonej w wydanie nowej wersji, nie ma pewności, że jej instalacja nie zakłóci stanu czujników _VTherm_. Po zainstalowaniu aktualizacji, dla każdego sensora _VTherm_ należy sprawdzić presety, tryb HVAC i ewentualnie ustawienie temperatur sensorów _VTherm_.**
+>
 
 >## Wydanie 8.2
 > Dodano opcjonalną funkcję blokowania/odblokowania termostatu _*VTherm*_ za pomocą kodu PIN. Więcej informacji na ten temat znajduje się [tutaj](documentation/pl/feature-lock.md).

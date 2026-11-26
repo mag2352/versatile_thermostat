@@ -2,16 +2,24 @@
 
 - [Dokumentacja Referencyjna](#dokumentacja-referencyjna)
   - [Parametry](#parametry)
+- [Konfiguracja w trybie eksperckim](#konfiguracja-w-trybie-eksperckim)
+  - [Parametry samoregulacji w trybie eksperckim](#parametry-samoregulacji-w-trybie-eksperckim)
+  - [Wyłączenie sprawdzania czujnika zewnętrznego w trybie bezpieczeństwa](#wyłączenie-sprawdzania-czujnika-zewnętrznego-w-trybie-bezpieczeństwa)
+  - [Maksymalny limit mocy grzewczej](#maksymalny-limit-mocy-grzewczej)
+  - [Parametry automatycznej detekcji otwarcia okna](#parametry-automatycznej-detekcji-otwarcia-okna)
+  - [Przechowywanie plików dziennika (Log Buffer)](#przechowywanie-plików-dziennika-log-buffer)
 - [Sensory](#sensory)
 - [Akcje (Usługi)](#akcje-usługi)
   - [Wymuszanie obecności/zajętości](#wymuszanie-obecnościzajętości)
   - [Modyfikacja ustawień bezpieczeństwa](#modyfikacja-ustawień-bezpieczeństwa)
   - [Pomijanie sprawdzania stanu okna](#pomijanie-sprawdzania-stanu-okna)
   - [Zmiana parametrów TPI](#zmiana-parametrów-tpi)
+  - [Preset czasowy](#preset-czasowy)
 - [Zdarzenia](#zdarzenia)
 - [Atrybuty własne](#atrybuty-własne)
   - [For _VTherm_](#for-vtherm)
   - [For central configuration](#for-central-configuration)
+  - [Atrybuty własne konfiguracji centralnej](#atrybuty-własne-konfiguracji-centralnej)
 
 ## Parametry
 
@@ -66,6 +74,7 @@
 | ``minimal_deactivation_delay``            | Minimalna zwłoka deaktywacji                                      | X                               | -                           | -                          | X                         |
 | ``safety_delay_min``                      | Maksymalna zwłoka między dwoma pomiarami temperatury              | X                               | -                           | X                          | X                         |
 | ``safety_min_on_percent``                 | Procent mocy minimalnej do przejścia w tryb bezpieczny            | X                               | -                           | X                          | X                         |
+| ``manual_override_duration_min``          | Czas ręcznego nadpisania przed powrotem do presetu (minuty)       | X                               | X                           | X                          | X                         |
 | ``auto_regulation_mode``                  | Tryb samoregulacji                                                | -                               | X                           | -                          | -                         |
 | ``auto_regulation_dtemp``                 | Próg samoregulacji                                                | -                               | X                           | -                          | -                         |
 | ``auto_regulation_period_min``            | Minimalny czas samoregulacji                                      | -                               | X                           | -                          | -                         |
@@ -79,7 +88,149 @@
 | ``used_by_controls_central_boiler``       | Wskaźnik sterowania kotła termostatem                             | X                               | X                           | X                          | -                         |
 | ``use_auto_start_stop_feature``           | Wskażnik załączenia funkcji autoSTART/autoSTOP                    | -                               | X                           | -                          | -                         |
 | ``auto_start_stop_level``                 | Poziom detekcji autoSTART/autoSTOP                                | -                               | X                           | -                          | -                         |
+# Konfiguracja w trybie eksperckim
 
+Versatile Thermostat umożliwia konfigurację zaawansowanych parametrów bezpośrednio w pliku `configuration.yaml`. Te parametry są zarezerwowane dla zaawansowanych użytkowników i zapewniają dokładną kontrolę nad zachowaniem termostatu.
+
+## Parametry samoregulacji w trybie eksperckim
+
+Gdy _VTherm_ typu `over_climate` używa **trybu eksperckie** samoregulacji, możesz zadeklarować parametry regulacji bezpośrednio w pliku `configuration.yaml`. Pozwala to na precyzyjne dostrojenie zachowania regulacji.
+
+Aby użyć tej funkcji, dodaj następujące wiersze do pliku `configuration.yaml`:
+
+```yaml
+versatile_thermostat:
+  auto_regulation_expert:
+    kp: 0.6
+    ki: 0.1
+    k_ext: 0.0
+    offset_max: 10
+    accumulated_error_threshold: 80
+    overheat_protection: true
+```
+
+Parametry to:
+
+| Parametr                      | Opis                                                                                                                                  | Typ                       | Przykład |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------- |
+| `kp`                          | Współczynnik proporcjonalny zastosowany do surowego błędu temperatury (różnica między temperaturą docelową a rzeczywistą temperaturą) | Liczba zmiennoprzecinkowa | 0.6      |
+| `ki`                          | Współczynnik całkowy stosowany do akumulacji błędów w czasie                                                                          | Liczba zmiennoprzecinkowa | 0.1      |
+| `k_ext`                       | Współczynnik stosowany do różnicy między temperaturą wewnętrzną a zewnętrzną. Umożliwia kompensację zmian zewnętrznych                | Liczba zmiennoprzecinkowa | 0.0      |
+| `offset_max`                  | Maksymalna korekta (przesunięcie), którą regulacja może zastosować do temperatury zadanej                                             | Liczba zmiennoprzecinkowa | 10       |
+| `accumulated_error_threshold` | Maksymalny próg akumulacji błędu. Zapobiega nieskończonej akumulacji błędu                                                            | Liczba zmiennoprzecinkowa | 80       |
+| `overheat_protection`         | Aktywuje ochronę przed przegrzaniem poprzez ograniczenie poprawek dodatnich (opcjonalnie)                                             | Wartość logiczna          | true     |
+
+> ![Ważne](images/tips.png) _*Ważna uwaga*_
+>
+> - Te parametry dotyczą **wszystkich _VTherms_ w trybie eksperckim** w systemie. Nie jest możliwe posiadanie różnych konfiguracji dla różnych termostatów.
+> - **Home Assistant musi zostać uruchomiony ponownie**, aby zmiany weszły w życie (lub możesz ponownie załadować integrację Versatile Thermostat za pośrednictwem Narzędzi Programisty).
+> - Zapoznaj się z [dokumentacją samoregulacji](self-regulation.md#samoregulacja-w-trybie-eksperckim), aby znaleźć przykłady wstępnie zdefiniowanych konfiguracji.
+
+## Wyłączenie sprawdzania czujnika zewnętrznego w trybie bezpieczeństwa
+
+Domyślnie tryb bezpieczeństwa sprawdza, czy **czujnik temperatury zewnętrznej** regularnie wysyła dane. Jeśli jednak czujnik zewnętrzny nie jest obecny lub nie jest krytyczny dla Twojej instalacji, możesz wyłączyć to sprawdzenie.
+
+Aby to zrobić, dodaj następujące wiersze do pliku `configuration.yaml`:
+
+```yaml
+versatile_thermostat:
+  safety_mode:
+    check_outdoor_sensor: false
+```
+
+| Parametr               | Opis                                                                                                                                   | Typ              | Domyślnie |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | --------- |
+| `check_outdoor_sensor` | Jeśli `true`, brak danych czujnika zewnętrznego wyzwoli tryb bezpieczeństwa. Jeśli `false`, będzie sprawdzany tylko czujnik wewnętrzny | Wartość logiczna | true      |
+
+> ![Ważne](images/tips.png) _*Ważna uwaga*_
+>
+> - Ta modyfikacja dotyczy **wszystkich _VTherms_** w systemie
+> - Wpływa na detekcję dla wszystkich termostatów w tym samym czasie
+> - **Home Assistant musi zostać uruchomiony ponownie**, aby zmiany weszły w życie
+
+## Maksymalny limit mocy grzewczej
+
+Parametr `max_on_percent` pozwala na globalne ograniczenie maksymalnej mocy grzewczej dla całej instalacji. Może to być przydatne dla poszanowania ograniczeń elektrycznych lub regulowania obciążenia systemu.
+
+Aby skonfigurować ten limit, dodaj następujący wiersz do pliku `configuration.yaml`:
+
+```yaml
+versatile_thermostat:
+  max_on_percent: 0.9
+```
+
+| Parametr         | Opis                                                                               | Typ                       | Zakres     | Domyślnie |
+| ---------------- | ---------------------------------------------------------------------------------- | ------------------------- | ---------- | --------- |
+| `max_on_percent` | Maksymalny procent dozwolonej mocy grzewczej. `1.0` = 100% mocy, `0.9` = 90%, itd. | Liczba zmiennoprzecinkowa | 0.0 do 1.0 | 1.0       |
+
+**Przykłady użycia**:
+- `0.8`: ogranicza ogrzewanie do 80% wydajności
+- `0.5`: ogranicza do 50% (przydatne w przypadku przeciążenia elektrycznego)
+- `1.0`: brak ograniczenia (zachowanie domyślne)
+
+> ![Ważne](images/tips.png) _*Ważna uwaga*_
+>
+> - To ograniczenie dotyczy **wszystkich _VTherms_** w systemie
+> - Jest stosowane natychmiast bez ponownego uruchamiania
+> - Wpływa na maksymalną moc obliczaną w każdym cyklu
+
+## Parametry automatycznej detekcji otwarcia okna
+
+Używając automatycznej detekcji otwarcia okna (opartej na spadzie temperatury), możesz dostroić parametry wygładzania temperatury, aby poprawić detekcję.
+
+Aby skonfigurować te parametry, dodaj następujące wiersze do pliku `configuration.yaml`:
+
+```yaml
+versatile_thermostat:
+  short_ema_params:
+    max_alpha: 0.5
+    halflife_sec: 300
+    precision: 2
+```
+
+| Parametr       | Opis                                                                                                                            | Typ                       | Zakres     | Domyślnie |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------- | --------- |
+| `max_alpha`    | Maksymalny współczynnik wygładzania (alfa) dla średniej ruchomej wykładniczej. Kontroluje czułość na szybkie zmiany temperatury | Liczba zmiennoprzecinkowa | 0.0 do 1.0 | 0.5       |
+| `halflife_sec` | Okres półtrwania w sekundach dla obliczenia średniej ruchomej. Określa, jak szybko stare wartości tracą wagę                    | Liczba całkowita          | > 0        | 300       |
+| `precision`    | Liczba miejsc dziesiętnych zachowywanych w obliczeniu średniej ruchomej                                                         | Liczba całkowita          | > 0        | 2         |
+
+**Znaczenie parametrów**:
+- **`max_alpha`**: wyższa wartość sprawia, że detekcja jest bardziej reaktywna na nagłe zmiany (szybsza detekcja, ale bardziej wrażliwa na fałsze alarmy)
+- **`halflife_sec`**: krótszy czas sprawia, że algorytm szybciej zapomina stare wartości (szybsza detekcja)
+- **`precision`**: kontroluje zaokrąglenie obliczenia (rzadko wymaga dostrojenia)
+
+> ![Ostrzeżenie](images/tips.png) _*Te parametry są czułe*_
+>
+> - Te parametry wpływają na automatyczną detekcję otwarcia okna
+> - Dotyczą **wszystkich _VTherms_** w systemie
+> - Dostosuj je tylko w przypadku problemów z detekcją (fałsze alarmy lub brak detekcji)
+> - Zapoznaj się z [sekcją rozwiązywania problemów](troubleshooting.md#dostosowanie-parametrów-detekcji-otwarcia-okna-w-trybie-automatycznym), aby uzyskać więcej szczegółów
+
+## Przechowywanie plików dziennika (Log Buffer)
+
+Versatile Thermostat przechowuje wewnętrzne dzienniki do rozwiązywania problemów. Można skonfigurować okres przechowywania tych dzienników.
+
+Aby skonfigurować ten czas przechowywania, dodaj następujący wiersz do pliku `configuration.yaml`:
+
+```yaml
+versatile_thermostat:
+  log_buffer_max_age_hours: 24
+```
+
+| Parametr                   | Opis                                                                                                       | Typ              | Zakres | Domyślnie |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------- | ------ | --------- |
+| `log_buffer_max_age_hours` | Maksymalny okres przechowywania dziennika w godzinach. Dzienniki starsze niż to będą automatycznie usuwane | Liczba całkowita | > 0    | 24        |
+
+**Przykłady użycia**:
+- `12`: przechowuje dzienniki z ostatnich 12 godzin
+- `24`: przechowuje dzienniki przez 24 godziny (1 dzień)
+- `72`: przechowuje dzienniki przez 72 godziny (3 dni) dla rozszerzonego rozwiązywania problemów
+
+> ![Ważne](images/tips.png) _*Zarządzanie pamięcią*_
+>
+> - Dłuższy czas przechowywania zużywa więcej pamięci
+> - Ta konfiguracja dotyczy **wszystkich _VTherms_** w systemie
+> - Dzienniki są przydatne do rozwiązywania problemów za pośrednictwem punktu końcowego pobierania dziennika
 # Sensory
 
 W termostacie dostępne są sensory wizualizujące alerty i stan wewnętrzny samego termostatu. Są one dostępne w encjach urządzenia powiązanych z termostatem:
@@ -189,6 +340,26 @@ target:
   entity_id: climate.sonoff_trvzb
 ```
 
+## Preset czasowy
+Te usługi umożliwiają tymczasowe wymuszenie presetu na termostacie przez określony czas. Szczegóły w [Preset czasowy](feature-timed-preset.md).
+
+Aby aktywować preset czasowy:
+```yaml
+service: versatile_thermostat.set_timed_preset
+data:
+  preset: "boost"
+  duration_minutes: 30
+target:
+  entity_id: climate.moj_termostat
+```
+
+Aby anulować preset czasowy przed upływem jego czasu:
+```yaml
+service: versatile_thermostat.cancel_timed_preset
+target:
+  entity_id: climate.moj_termostat
+```
+
 # Zdarzenia
 Kluczowe zdarzenia z udziałem termostatów wywołują pojawienie się powiadomień za pośrednictwem magistrali komunikacyjnej.
 Powiadomienia dotyczą następujących zdarzeń:
@@ -200,6 +371,7 @@ Powiadomienia dotyczą następujących zdarzeń:
 - ``versatile_thermostat_preset_event``: w termostacie wybrano nowy preset. To zdarzenie jest również raportowane podczas uruchamiania termostatu.
 - ``versatile_thermostat_central_boiler_event``: zdarzenie zmiany stanu kotła
 - ``versatile_thermostat_auto_start_stop_event``: zdarzenie zatrzymania lub ponownego uruchomienia wykonane przez funkcję autoSTART/autoSTOP
+- ``versatile_thermostat_timed_preset_event``: zdarzenie wskazujące aktywację lub dezaktywację presetu czasowego
 
 Jeśli śledziłeś instrukcje, gdy termostat przełącza się w tryb bezpieczny, wyzwalane są 3 zdarzenia:
 1. ``versatile_thermostat_temperature_event`` – wskazuje, że termometr przestał odpowiadać,
@@ -219,62 +391,68 @@ Aby dostosować algorytm, masz dostęp do całego kontekstu widzianego i oblicza
 
 Atrybuty własne są następujace:
 
-| Atrybut                            | Znaczenie                                                                                                           |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| ``hvac_modes``                     | Lista trybów obsługiwanych przez termostat                                                                          |
-| ``temp_min``                       | Temperatura minimana                                                                                                |
-| ``temp_max``                       | Temperatura maksymalna                                                                                              |
-| ``preset_modes``                   | Preset widoczny dla tego termostatu. Ukryte ustawienia nie są tu wyświetlane.                                       |
-| ``temperature_actuelle``           | Aktualna temperatura raportowana przez czujnik                                                                      |
-| ``temperature``                    | Temperatura docelowa                                                                                                |
-| ``action_hvac``                    | Akcja aktualnie wykonywana przez grzejnik. Może być `idle` lub `heating`.                                           |
-| ``preset_mode``                    | Aktualnie wybrany preset. Może być jednym z `preset_modes` lub ukrytym presetem, np. `moc`                          |
-| ``[eco/confort/boost]_temp``       | Temperatura skonfigurowana dla presetu `xxx`                                                                        |
-| ``[eco/confort/boost]_away_temp``  | Temperatura skonfigurowana dla presetu `xxx`, gdy `obecność` jest wyłączona lub ma wartość `not_home`.              |
-| ``temp_power``                     | Temperatura używana podczas wykrywania utraty sygnału                                                               |
-| ``on_percent``                     | Obliczony procent włączenia przez algorytm TPI                                                                      |
-| ``on_time_sec``                    | Okres załączenia (w sek.). Powinien wynosić ```on_percent * cycle_min```                                            |
-| ``off_time_sec``                   | Okres wyłączenia (w sek.). Powinien wynosić ```(1 - on_percent) * cycle_min```                                      |
-| ``cycle_min``                      | Cykl obliczeniowy (w min.)                                                                                          |
-| ``function``                       | Algorytm używany do obliczeń cyklu                                                                                  |
-| ``tpi_coef_int``                   | Wartość `współczynnika delty dla temperatury wewnętrznej` algorytmu TPI                                             |
-| ``tpi_coef_ext``                   | Wartość `współczynnika delty dla temperatury zewnętrznej` algorytmu TPI                                             |
-| ``saved_preset_mode``              | Ostatnio użyty preset przed automatycznym przełączeniem                                                             |
-| ``saved_target_temp``              | Ostatnia temperatura użyta przed automatycznym przełączeniem                                                        |
-| ``window_state``                   | Ostatni znany stan czujnika okna. `Brak`, jeśli czujnik nie jest skonfigurowany                                     |
-| ``is_window_bypass``               | `True`, jeśli pomijanie detekcji otwartego okna jest załączone                                                      |
-| ``motion_state``                   | Ostatni znany stan czujnika ruchu. `Brak`, jeśli detekcja ruchu nie jest skonfigurowana                             |
-| ``overpowering_state``             | Ostatni znany stan czujnika przeciążenia. `Brak`, jeśli zarządzanie energią nie jest skonfigurowane                 |
-| ``presence_state``                 | Ostatni znany stan czujnika obecności. `Brak`, jeśli detekcja obecności nie jest skonfigurowana                     |
-| ``safety_delay_min``               | Zwłoka w aktywacji trybu bezpiecznego, gdy jeden z dwóch czujników temperatury przestaje wysyłać pomiary            |
-| ``safety_min_on_percent``          | Procent grzania, poniżej którego termostat nie przełączy się w tryb bezpieczny                                      |
-| ``safety_default_on_percent``      | Procent grzania używany, gdy termostat pracuje w trybie bezpiecznym                                                 |
-| ``last_temperature_datetime``      | Data i czas ostatniego odczytu temperatury wewnętrznej (w formacie ISO8866)                                         |
-| ``last_ext_temperature_datetime``  | Data i czas ostatniego odczytu temperatury zewnętrznej (w formacie ISO8866)                                         |
-| ``safety_state``                   | Stan bezpieczny. `True` lub `false`                                                                                 |
-| ``minimal_activation_delay_sec``   | Minimalne opóźnienie aktywacji (w sek.)                                                                             |
-| ``minimal_deactivation_delay_sec`` | Minimalne opóźnienie deaktywacji (w sek.)                                                                           |
-| ``last_update_datetime``           | Data i czas tego stanu (w formacie ISO8866)                                                                         |
-| ``friendly_name``                  | Przyjazna nazwa termostatu                                                                                          |
-| ``supported_features``             | Kombinacja wszystkich funkcji obsługiwanych przez ten termostat. Zobacz dokumentację, aby uzyskać więcej informacji |
-| ``valve_open_percent``             | Procent otwarcia zaworu                                                                                             |
-| ``regulated_target_temperature``   | Temperatura docelowa obliczona przez samoregulację                                                                  |
-| ``is_inversed``                    | `True`, jeśli sterowanie jest odwrócone (dotyczy sterowania przewodowego z diodą)                                   |
-| ``is_controlled_by_central_mode``  | `True`, jeśli termostat może być sterowany centralnie                                                               |
-| ``last_central_mode``              | Ostatni użyty tryb centralny (`None`, jeśli termostat nie jest sterowany centralnie)                                |
-| ``is_used_by_central_boiler``      | Wskazuje, czy termostat może sterować centralnym kotłem                                                             |
-| ``auto_start_stop_enable``         | Wskazuje, czy termostat może pracować w trybie autoSTART/autoSTOP                                                   |
-| ``auto_start_stop_level``          | Wskazuje poziom autoSTAR/autoSTOP                                                                                   |
-| ``hvac_off_reason``                | Wskazuje powód wyłączenia termostatu (`hvac_off`). Może to być `Window`, `AutoSTART/autoSTOP` lub `Manual`          |
-| ``last_change_time_from_vtherm``   | Data i czas ostatniej zmiany dokonanej przez termostat                                                              |
-| ``nb_device_actives``              | Liczba urządzeń podrzędnych widocznych jako aktywne                                                                 |
-| ``device_actives``                 | Lista urządzeń podrzędnych widocznych jako aktywne                                                                  |
+| Atrybut                            | Znaczenie                                                                                                                                                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ``hvac_modes``                     | Lista trybów obsługiwanych przez termostat. Może zawierać `sleep`, który można wybrać tylko kartą kompatybilną z VTherm (taką jak [Versatile Thermostat UI Card](additions.md#karta-versatile-thermostat-ui-card)) lub akcją `versatile_thermostat.set_hvac_mode_sleep`; domyślna karta climate HA nie jest obsługiwana dla `sleep` |
+| ``temp_min``                       | Temperatura minimana                                                                                                                                                                                                  |
+| ``temp_max``                       | Temperatura maksymalna                                                                                                                                                                                                |
+| ``preset_modes``                   | Preset widoczny dla tego termostatu. Ukryte ustawienia nie są tu wyświetlane.                                                                                                                                         |
+| ``temperature_actuelle``           | Aktualna temperatura raportowana przez czujnik                                                                                                                                                                        |
+| ``temperature``                    | Temperatura docelowa                                                                                                                                                                                                  |
+| ``action_hvac``                    | Akcja aktualnie wykonywana przez grzejnik. Może być `idle` lub `heating`.                                                                                                                                             |
+| ``preset_mode``                    | Aktualnie wybrany preset. Może być jednym z `preset_modes` lub ukrytym presetem, np. `moc`                                                                                                                            |
+| ``[eco/confort/boost]_temp``       | Temperatura skonfigurowana dla presetu `xxx`                                                                                                                                                                          |
+| ``[eco/confort/boost]_away_temp``  | Temperatura skonfigurowana dla presetu `xxx`, gdy `obecność` jest wyłączona lub ma wartość `not_home`.                                                                                                                |
+| ``temp_power``                     | Temperatura używana podczas wykrywania utraty sygnału                                                                                                                                                                 |
+| ``on_percent``                     | Obliczony procent włączenia przez algorytm TPI                                                                                                                                                                        |
+| ``on_time_sec``                    | Okres załączenia (w sek.). Powinien wynosić ```on_percent * cycle_min```                                                                                                                                              |
+| ``off_time_sec``                   | Okres wyłączenia (w sek.). Powinien wynosić ```(1 - on_percent) * cycle_min```                                                                                                                                        |
+| ``cycle_min``                      | Cykl obliczeniowy (w min.)                                                                                                                                                                                            |
+| ``function``                       | Algorytm używany do obliczeń cyklu                                                                                                                                                                                    |
+| ``tpi_coef_int``                   | Wartość `współczynnika delty dla temperatury wewnętrznej` algorytmu TPI                                                                                                                                               |
+| ``tpi_coef_ext``                   | Wartość `współczynnika delty dla temperatury zewnętrznej` algorytmu TPI                                                                                                                                               |
+| ``saved_preset_mode``              | Ostatnio użyty preset przed automatycznym przełączeniem                                                                                                                                                               |
+| ``saved_target_temp``              | Ostatnia temperatura użyta przed automatycznym przełączeniem                                                                                                                                                          |
+| ``window_state``                   | Ostatni znany stan czujnika okna. `Brak`, jeśli czujnik nie jest skonfigurowany                                                                                                                                       |
+| ``is_window_bypass``               | `True`, jeśli pomijanie detekcji otwartego okna jest załączone                                                                                                                                                        |
+| ``motion_state``                   | Ostatni znany stan czujnika ruchu. `Brak`, jeśli detekcja ruchu nie jest skonfigurowana                                                                                                                               |
+| ``overpowering_state``             | Ostatni znany stan czujnika przeciążenia. `Brak`, jeśli zarządzanie energią nie jest skonfigurowane                                                                                                                   |
+| ``presence_state``                 | Ostatni znany stan czujnika obecności. `Brak`, jeśli detekcja obecności nie jest skonfigurowana                                                                                                                       |
+| ``safety_delay_min``               | Zwłoka w aktywacji trybu bezpiecznego, gdy jeden z dwóch czujników temperatury przestaje wysyłać pomiary                                                                                                              |
+| ``safety_min_on_percent``          | Procent grzania, poniżej którego termostat nie przełączy się w tryb bezpieczny                                                                                                                                        |
+| ``safety_default_on_percent``      | Procent grzania używany, gdy termostat pracuje w trybie bezpiecznym                                                                                                                                                   |
+| ``last_temperature_datetime``      | Data i czas ostatniego odczytu temperatury wewnętrznej (w formacie ISO8866)                                                                                                                                           |
+| ``last_ext_temperature_datetime``  | Data i czas ostatniego odczytu temperatury zewnętrznej (w formacie ISO8866)                                                                                                                                           |
+| ``safety_state``                   | Stan bezpieczny. `True` lub `false`                                                                                                                                                                                   |
+| ``minimal_activation_delay_sec``   | Minimalne opóźnienie aktywacji (w sek.)                                                                                                                                                                               |
+| ``minimal_deactivation_delay_sec`` | Minimalne opóźnienie deaktywacji (w sek.)                                                                                                                                                                             |
+| ``last_update_datetime``           | Data i czas tego stanu (w formacie ISO8866)                                                                                                                                                                           |
+| ``friendly_name``                  | Przyjazna nazwa termostatu                                                                                                                                                                                            |
+| ``supported_features``             | Kombinacja wszystkich funkcji obsługiwanych przez ten termostat. Zobacz dokumentację, aby uzyskać więcej informacji                                                                                                   |
+| ``valve_open_percent``             | Procent otwarcia zaworu                                                                                                                                                                                               |
+| ``regulated_target_temperature``   | Temperatura docelowa obliczona przez samoregulację                                                                                                                                                                    |
+| ``is_inversed``                    | `True`, jeśli sterowanie jest odwrócone (dotyczy sterowania przewodowego z diodą)                                                                                                                                     |
+| ``is_controlled_by_central_mode``  | `True`, jeśli termostat może być sterowany centralnie                                                                                                                                                                 |
+| ``last_central_mode``              | Ostatni użyty tryb centralny (`None`, jeśli termostat nie jest sterowany centralnie)                                                                                                                                  |
+| ``is_used_by_central_boiler``      | Wskazuje, czy termostat może sterować centralnym kotłem                                                                                                                                                               |
+| ``auto_start_stop_enable``         | Wskazuje, czy termostat może pracować w trybie autoSTART/autoSTOP                                                                                                                                                     |
+| ``auto_start_stop_level``          | Wskazuje poziom autoSTAR/autoSTOP                                                                                                                                                                                     |
+| ``auto_start_stop_stop_mode``      | Tryb stosowany przy automatycznym zatrzymaniu. Może to być `off`, `fan_only` lub `dry`                                                                                                                                |
+| ``hvac_off_reason``                | Wskazuje powód wyłączenia termostatu (`hvac_off`). Może to być `Window`, `AutoSTART/autoSTOP`, `Manual` lub `Sleep`                                                                                                   |
+| ``hvac_mode_reason``               | Wskazuje powód bieżącego trybu termostatu (`hvac_mode`). Może to być `Window`, `AutoSTART/autoSTOP` (uszczegółowione według trybu zatrzymania: off, fan-only lub dry), `Central mode`, `Safety`, `Manual` lub `Sleep` |
+| ``is_sleeping``                    | Wskazuje, że VTherm jest w trybie uśpienia (dotyczy `over_climate` z bezpośrednim sterowaniem zaworem oraz `over_valve`)                                                                                              |
+| ``unavailable_underlying_entities``| Lista podległych encji (climate, switch, zawór, liczby otwarcia/zamknięcia...) w stanie `unavailable` lub `unknown` po uruchomieniu VTherm. Pusta, jeśli wszystkie są dostępne                                        |
+| ``last_change_time_from_vtherm``   | Data i czas ostatniej zmiany dokonanej przez termostat                                                                                                                                                                |
+| ``nb_device_actives``              | Liczba urządzeń podrzędnych widocznych jako aktywne                                                                                                                                                                   |
+| ``device_actives``                 | Lista urządzeń podrzędnych widocznych jako aktywne                                                                                                                                                                    |
 
 ## For central configuration
 
-The custom attributes of the central configuration are accessible in Developer Tools / States on the `binary_sensor.central_boiler` entity:
+## Atrybuty własne konfiguracji centralnej
 
-| Attribute                                   | Meaning                                                                              |
+Atrybuty własne konfiguracji centralnej są dostepne w panelu _Narzędzia deweloperskie -> Stany_ w sensorze `binary_sensor.central_configuration_central_boiler`:
+
+| Atrybut                                     | znaczenie                                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------------------------ |
 | ``central_boiler_state``                    | The state of the central boiler. Can be `on` or `off`                                |
 | ``is_central_boiler_configured``            | Indicates whether the central boiler feature is configured                           |
@@ -334,3 +512,19 @@ device_class: running
 icon: mdi:water-boiler-off
 friendly_name: Central boiler
 ```
+
+## `hvac_action` przy bezpośrednim sterowaniu zaworem
+
+Dla VTherm `over_climate` z bezpośrednim sterowaniem zaworem wartość `hvac_action` jest obliczana na podstawie rzeczywistego otwarcia zaworu i ostatniego polecenia otwarcia. Nie zależy ona od akcji zgłaszanej przez podrzędną encję climate.
+
+| Warunek VTherm             | Warunek zaworu                                                                                           | Wynikowe `hvac_action` | Uwagi                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| Wewnętrzny tryb to `SLEEP` | Dowolne fizyczne otwarcie, również 100%                                                                  | `off`                  | Stan wymuszony: zawór może pozostać otwarty bez żądania ogrzewania ani centralnego kotła. |
+| Nie jest to `SLEEP`        | Co najmniej jeden regulowany zawór ma rzeczywiste otwarcie ściśle większe niż `100 - max_closing_degree` | `heating`              | Porównanie jest ścisłe.                                                                   |
+| Nie jest to `SLEEP`        | Żaden zawór nie grzeje, ale co najmniej jeden zawór ma dodatnie ostatnie polecenie otwarcia              | `idle`                 | Zawór ma polecenie otwarcia, lecz nie jest uznawany za fizycznie aktywny.                 |
+| Nie jest to `SLEEP`        | Wszystkie zawory mają ostatnie polecenie otwarcia równe `0`                                              | `off`                  | Żadne otwarcie nie jest oczekiwane.                                                       |
+| Nie jest to `SLEEP`        | Żaden zawór nie ma wcześniejszego polecenia otwarcia                                                     | `off`                  | Typowy przypadek uruchomienia lub braku polecenia.                                        |
+| Nie jest to `SLEEP`        | Otwarcie zaworu jest równe `100 - max_closing_degree`                                                    | `idle`                 | Równość nie daje `heating`, gdy pozostaje dodatnie polecenie.                             |
+| Nie jest to `SLEEP`        | Wiele zaworów, z których co najmniej jeden grzeje                                                        | `heating`              | `heating` ma priorytet.                                                                   |
+| Nie jest to `SLEEP`        | Wiele zaworów, żaden nie grzeje, ale co najmniej jeden jest bezczynny                                    | `idle`                 | Stan zastępczy po `heating`.                                                              |
+| Nie jest to `SLEEP`        | Wiele zaworów, wszystkie są wyłączone                                                                    | `off`                  | Nie pozostaje żaden aktywny ani oczekujący zawór.                                         |

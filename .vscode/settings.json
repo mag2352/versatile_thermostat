@@ -1,7 +1,7 @@
 {
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter",
-        "editor.formatOnSave": true,
+        "editor.formatOnSave": false,
         "editor.formatOnSaveMode": "modifications"
     },
     "files.associations": {
@@ -16,5 +16,9 @@
     //    "/home/vscode/core",
         "/workspaces/versatile_thermostat/custom_components/versatile_thermostat",
         "/home/vscode/.local/lib/python3.13/site-packages/homeassistant"
-    ]
+    ],
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "chat.tools.terminal.autoApprove": {
+        "rtk": true
+    }
 }

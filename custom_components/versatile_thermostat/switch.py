@@ -2,6 +2,7 @@
 
 """ Implements the VersatileThermostat select component """
 import logging
+from vtherm_api.log_collector import get_vtherm_logger
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
@@ -17,7 +18,7 @@ from .base_entity import VersatileThermostatBaseEntity
 
 from .const import *  # pylint: disable=unused-wildcard-import,wildcard-import
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 async def async_setup_entry(
@@ -26,20 +27,19 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VersatileThermostat switches with config flow."""
-    _LOGGER.debug(
-        "Calling async_setup_entry entry=%s, data=%s", entry.entry_id, entry.data
-    )
-
     unique_id = entry.entry_id
     name = entry.data.get(CONF_NAME)
+    _LOGGER.debug("%s - Calling async_setup_entry entry=%s, data=%s", name, entry.entry_id, entry.data)
+
     vt_type = entry.data.get(CONF_THERMOSTAT_TYPE)
     auto_start_stop_feature = entry.data.get(CONF_USE_AUTO_START_STOP_FEATURE)
+    auto_start_stop_delegated = CONF_AUTO_START_STOP_MIGRATED_BY in entry.data
 
     entities = []
     if vt_type == CONF_THERMOSTAT_CLIMATE:
         entities.append(FollowUnderlyingTemperatureChange(hass, unique_id, name, entry))
 
-        if auto_start_stop_feature is True:
+        if auto_start_stop_feature is True and not auto_start_stop_delegated:
             # Creates a switch to enable the auto-start/stop
             enable_entity = AutoStartStopEnable(hass, unique_id, name, entry)
             entities.append(enable_entity)

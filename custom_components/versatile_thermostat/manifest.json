@@ -2,14 +2,14 @@
   "domain": "versatile_thermostat",
   "name": "Versatile Thermostat",
   "after_dependencies": [
-    "recorder"
+    "recorder",
+    "http"
   ],
   "codeowners": [
     "@jmcollin78"
   ],
   "config_flow": true,
   "dependencies": [],
-  
   "documentation": "https://github.com/jmcollin78/versatile_thermostat",
   "homekit": {},
   "integration_type": "device",
@@ -18,9 +18,10 @@
   "quality_scale": "silver",
   "requirements": [
     "numpy",
-    "scipy"
+    "scipy",
+    "vtherm_api>=0.13.1"
   ],
   "ssdp": [],
-  "version": "8.4.0",
+  "version": "11.0.0",
   "zeroconf": []
 }

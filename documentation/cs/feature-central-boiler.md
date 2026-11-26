@@ -10,18 +10,23 @@
 Můžete ovládat centralizovaný kotel. Pokud je možné spustit nebo zastavit kotel z Home Assistant, Versatile Thermostat jej bude moci přímo ovládat.
 
 ## Princip
-
-<please update translation from English version>
-
 Základní princip je následující:
 1. Přidá se nová entita typu `binary_sensor`, pojmenovaná ve výchozím nastavení `binary_sensor.central_boiler`.
-2. V konfiguraci _VTherm_ specifikujete, zda by _VTherm_ měl ovládat kotel. V heterogenní instalaci by některé _VTherm_ měly ovládat kotel a jiné ne. Proto musíte v každé konfiguraci _VTherm_ uvést, zda ovládá kotel.
+2. V konfiguraci _VTherm_ specifikujete, zda by _VTherm_ měl ovládat kotel. V heterogenní instalaci by některé _VTherm_ měly ovládat kotel a jiné ne. Proto musíte v každé konfiguraci _VTherm_ uvést, zda ovládá kotel. Každému _VTherm_, který kotel ovládá, lze přiřadit výkon.
 3. `binary_sensor.central_boiler` poslouchá změny stavu zařízení _VTherm_ označených jako ovládající kotel.
-4. Když počet zařízení ovládaných _VTherm_ požadujících vytápění (tj. když se jejich `hvac_action` změní na `Heating`) překročí konfigurovatelný práh, `binary_sensor.central_boiler` se zapne `on` a **pokud byla nakonfigurována aktivační služba, tato služba se zavolá**.
-5. Pokud počet zařízení požadujících vytápění klesne pod práh, `binary_sensor.central_boiler` se vypne `off` a **pokud byla nakonfigurována deaktivační služba, tato služba se zavolá**.
-6. Máte přístup ke dvěma entitám:
+4. Když počet zařízení ovládaných _VTherm_, která požadují vytápění (tj. když se jejich `hvac_action` změní na `Heating`), dosáhne konfigurovatelného prahu, **nebo** když součet požadovaných výkonů dosáhne prahu výkonu, `binary_sensor.central_boiler` se zapne `on` a **pokud byla nakonfigurována aktivační služba, tato služba se zavolá**.
+5. Pokud již není dosažen žádný z nenulových prahů, `binary_sensor.central_boiler` se vypne `off` a **pokud byla nakonfigurována deaktivační služba, tato služba se zavolá**.
+6. Máte přístup ke čtyřem entitám:
    - Entita typu `number`, pojmenovaná ve výchozím nastavení `number.boiler_activation_threshold`, která udává aktivační práh. Tento práh je počet zařízení (radiátorů) požadujících vytápění.
    - Entita typu `sensor`, pojmenovaná ve výchozím nastavení `sensor.nb_device_active_for_boiler`, která zobrazuje počet zařízení požadujících vytápění. Například _VTherm_ se 4 ventily, z nichž 3 požadují vytápění, způsobí, že tento senzor zobrazí 3. Počítají se pouze zařízení z _VTherm_ označených pro ovládání centrálního kotle.
+  - Entita typu `number` s názvem `number.boiler_power_activation_threshold`, která udává práh požadovaného výkonu. Pokud součet výkonů požadovaných zařízeními _VTherm_ označenými pro ovládání kotle dosáhne nebo překročí tento práh, kotel se aktivuje.
+  - Entita typu `sensor` s názvem `sensor.total_power_active_for_boiler`, která zobrazuje naposledy vypočtený součet výkonů.
+
+Kotel se aktivuje, jakmile je dosaženo nebo překročeno alespoň jedno ze dvou prahových hodnot: práh počtu aktivních podřízených zařízení **nebo** práh požadovaného výkonu. Jde o logickou podmínku „NEBO“. Nastavením prahu na nulu se příslušné kritérium deaktivuje.
+
+> **Poznámka k prahu počtu aktivních podřízených zařízení:** U _VTherm_ ovládajících ventily se při počítání zohledňuje, zda je každý ventil aktivní. Nastavení ventilů, zejména prahová hodnota otevření, proto určuje, zda se ventil započítá.
+
+> **Upozornění k prahu výkonu:** Vypočítává se z výkonu požadovaného algoritmem, nezávisle na otevření ventilů. Požadovaný výkon může být nenulový, i když nakonfigurované prahové hodnoty otevření brání tomu, aby byly ventily považovány za aktivní. Tento práh se proto nedoporučuje pro _VTherm_ ovládající ventily.
 
 Máte tedy vždy informace pro správu a úpravu spouštění kotle.
 
@@ -50,6 +55,16 @@ Příklady (přizpůsobte svému případu):
 - `switch.pompe_chaudiere/switch.turn_on`: pro zapnutí spínače napájejícího čerpadlo kotle.
 - `switch.pompe_chaudiere/switch.turn_off`: pro vypnutí spínače napájejícího čerpadlo kotle.
 - ...
+
+### Použití šablony pro hodnotu
+Hodnota (část za `atribut:`) může být šablona Home Assistant. Šablona se vyhodnocuje při každém odeslání příkazu: při aktivaci, deaktivaci i při každém keep-alive. Hodnota může obsahovat `/` a `:`.
+
+Příklad pro kotel řízený pokojovým regulátorem, jehož požadovaná hodnota je relativní k jeho vlastní naměřené teplotě:
+- aktivace: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) + 1 }}`
+- deaktivace: `climate.thermostat_hc1/climate.set_temperature/temperature:{{ state_attr('climate.thermostat_hc1', 'current_temperature') | float(20) - 2 }}`
+
+> **Tip**
+> Použijte `float(výchozí_hodnota)`, aby šablona nikdy neselhala, a zapněte keep-alive, aby požadovaná hodnota sledovala naměřenou teplotu. Pokud nelze šablonu vyhodnotit, příkaz se přeskočí a zapíše se chyba. Šablona, kterou nelze zkompilovat, je při ověření konfigurace odmítnuta.
 
 ### Jak najít správnou akci?
 Pro nalezení správné akce je nejlepší jít do "Developer Tools / Services", vyhledat akci k zavolání, entitu k ovládání a jakékoli požadované parametry.

@@ -1,4 +1,17 @@
-default_config:
+# default_config is intentionally NOT used here because it pulls in go2rtc,
+# which requires a Docker binary unavailable in the dev container.
+# Instead, list only the components needed for development:
+config:
+history:
+logbook:
+homeassistant:
+system_health:
+energy:
+
+# Demo integration: provides the `climate.hvac` entity which supports the
+# `off`, `heat`, `cool`, `auto`, `dry` and `fan_only` modes. Use it as the
+# underlying of an over_climate VTherm to test the auto-start/stop stop mode.
+demo:
 
 recorder:
     auto_purge: true
@@ -21,11 +34,9 @@ logger:
     default: warning
     logs:
         custom_components.versatile_thermostat: debug
-        # custom_components.versatile_thermostat.underlyings: info
-        # custom_components.versatile_thermostat.climate: info
-        # custom_components.versatile_thermostat.base_thermostat: debug
-        custom_components.versatile_thermostat.sensor: info
-        custom_components.versatile_thermostat.binary_sensor: info
+        custom_components.vtherm_auto_fan_extended: debug
+        custom_components.vtherm_heating_failure_detection: debug
+        custom_components.vtherm_auto_start_stop: debug
 
 # If you need to debug uncommment the line below (doc: https://www.home-assistant.io/integrations/debugpy/)
 debugpy:
@@ -39,7 +50,6 @@ versatile_thermostat:
         ki: 0.08
         k_ext: 0.0
         offset_max: 5
-        stabilization_threshold: 0.1
         accumulated_error_threshold: 50
     short_ema_params:
         max_alpha: 0.6
@@ -47,6 +57,7 @@ versatile_thermostat:
         precision: 3
     safety_mode:
         check_outdoor_sensor: false
+    log_buffer_max_age_hours: 1
 
 input_number:
     fake_temperature_sensor1:
@@ -55,6 +66,22 @@ input_number:
         max: 35
         step: .1
         icon: mdi:thermometer
+        unit_of_measurement: °C
+        mode: box
+    fake_internal_temp_sensor1:
+        name: Internal Temp 1
+        min: 0
+        max: 35
+        step: .1
+        icon: mdi:thermometer-lines
+        unit_of_measurement: °C
+        mode: box
+    fake_internal_temp_sensor2:
+        name: Internal Temp 2
+        min: 0
+        max: 35
+        step: .1
+        icon: mdi:thermometer-lines
         unit_of_measurement: °C
         mode: box
     fake_external_temperature_sensor1:
@@ -71,14 +98,14 @@ input_number:
         max: 1000
         step: 10
         icon: mdi:flash
-        unit_of_measurement: kW
+        unit_of_measurement: W
     fake_current_power_max:
         name: Current power max threshold
         min: 0
         max: 1000
         step: 10
         icon: mdi:flash
-        unit_of_measurement: kW
+        unit_of_measurement: W
     fake_valve1:
         name: The valve 1
         min: 10
@@ -98,6 +125,14 @@ input_number:
         max: 12
         step: .1
         icon: mdi:tune
+        unit_of_measurement: °C
+        mode: box
+    fake_external_temp1:
+        name: Sonoff external temp 1
+        min: 5
+        max: 35
+        step: .1
+        icon: mdi:thermometer-lines
         unit_of_measurement: °C
         mode: box
     fake_opening_degree1:
@@ -122,6 +157,14 @@ input_number:
         max: 12
         step: .1
         icon: mdi:tune
+        unit_of_measurement: °C
+        mode: box
+    fake_external_temp2:
+        name: Sonoff external temp 2
+        min: 5
+        max: 35
+        step: .1
+        icon: mdi:thermometer-lines
         unit_of_measurement: °C
         mode: box
     fake_opening_degree2:
@@ -203,6 +246,9 @@ input_boolean:
     fake_central_boiler_switch:
         name: Fake Central Boiler Switch
         icon: mdi:water-boiler
+    inhibition:
+        name: inhibition
+        icon: mdi:pause-circle-outline
 
 climate:
     - platform: generic_thermostat
@@ -249,14 +295,14 @@ climate:
     - platform: generic_thermostat
       name: Underlying Sonoff TRVZB1
       heater: input_boolean.fake_valve_sonoff_trvzb1
-      target_sensor: input_number.fake_temperature_sensor1
+      target_sensor: input_number.fake_internal_temp_sensor1
       ac_mode: false
       target_temp_step: 0.1
       precision: 0.1
     - platform: generic_thermostat
       name: Underlying Sonoff TRVZB2
       heater: input_boolean.fake_valve_sonoff_trvzb2
-      target_sensor: input_number.fake_temperature_sensor1
+      target_sensor: input_number.fake_internal_temp_sensor2
       ac_mode: false
       target_temp_step: 0.1
       precision: 0.1
@@ -310,76 +356,45 @@ template:
                 {% if energy < 0 %}{{none}}{% else %}
                   {{ energy | round(2, default=0) }}
                 {% endif %}
-
-template:
+          - name: "Kint VTherm switch"
+            unique_id: kint_vtherm_switch
+            state: "{{ state_attr('climate.thermostat_switch_1', 'vtherm_over_switch').tpi_coef_int }}"
+            state_class: measurement
+          - name: "Kext VTherm switch"
+            unique_id: kext_vtherm_switch
+            state: "{{ state_attr('climate.thermostat_switch_1', 'vtherm_over_switch').tpi_coef_ext }}"
+            state_class: measurement
     - switch:
-        - turn_on:
-            - action: select.select_option
-              data:
-                  option: comfort
-              target:
-                  entity_id:
-                    - select.seche_serviettes_sdb_rdc_cable_outlet_mode
-          turn_off:
-            - action: select.select_option
-              data:
-                  option: comfort-2
-              target:
-                  entity_id:
-                  - select.seche_serviettes_sdb_rdc_cable_outlet_mode
-          default_entity_id: switch.pilote_sdb_rdc
-          name: Pilote chauffage SDB RDC
-          state: '{{ is_state_attr(''switch_seche_serviettes_sdb_rdc'', ''sensor_state'', ''on'') }}'
-    - switch:
-        - turn_on:
-            - action: input_boolean.turn_on
-              target:
-                entity_id:
-                  - input_boolean.fake_inversed_heater
-          turn_off:
-            - action: input_boolean.turn_off
-              target:
-                entity_id:
-                  - input_boolean.fake_inversed_heater
-          default_entity_id: switch.fake_inversed_switch
-          name: A fake inversed switch
-          state: '{{ is_state(''input_boolean.fake_inversed_heater'', ''on'') }}'
-
-# Old style legacy template
-# switch:
-#     - platform: template
-#       switches:
-#           pilote_sdb_rdc:
-#               friendly_name: "Pilote chauffage SDB RDC"
-#               value_template: "{{ is_state_attr('switch_seche_serviettes_sdb_rdc', 'sensor_state', 'on') }}"
-#               turn_on:
-#                   action: select.select_option
-#                   data:
-#                       option: comfort
-#                   target:
-#                       entity_id: select.seche_serviettes_sdb_rdc_cable_outlet_mode
-#
-#               turn_off:
-#                   action: select.select_option
-#                   data:
-#                       option: comfort-2
-#                   target:
-#                       entity_id: select.seche_serviettes_sdb_rdc_cable_outlet_mode
-#     - platform: template
-#       switches:
-#           fake_inversed_switch:
-#               friendly_name: "A fake inversed switch"
-#               value_template: "{{ is_state('input_boolean.fake_inversed_heater', 'on') }}"
-#               turn_on:
-#                   action: input_boolean.turn_on
-#                   data: {}
-#                   target:
-#                       entity_id: input_boolean.fake_inversed_heater
-#               turn_off:
-#                   action: input_boolean.turn_off
-#                   data: {}
-#                   target:
-#                       entity_id: input_boolean.fake_inversed_heater
+          - turn_on:
+                - action: select.select_option
+                  data:
+                      option: comfort
+                  target:
+                      entity_id:
+                          - select.seche_serviettes_sdb_rdc_cable_outlet_mode
+            turn_off:
+                - action: select.select_option
+                  data:
+                      option: comfort-2
+                  target:
+                      entity_id:
+                          - select.seche_serviettes_sdb_rdc_cable_outlet_mode
+            default_entity_id: switch.pilote_sdb_rdc
+            name: Pilote chauffage SDB RDC
+            state: "{{ is_state_attr('switch_seche_serviettes_sdb_rdc', 'sensor_state', 'on') }}"
+          - turn_on:
+                - action: input_boolean.turn_on
+                  target:
+                      entity_id:
+                          - input_boolean.fake_inversed_heater
+            turn_off:
+                - action: input_boolean.turn_off
+                  target:
+                      entity_id:
+                          - input_boolean.fake_inversed_heater
+            default_entity_id: switch.fake_inversed_switch
+            name: A fake inversed switch
+            state: "{{ is_state('input_boolean.fake_inversed_heater', 'on') }}"
 
 frontend:
     extra_module_url:

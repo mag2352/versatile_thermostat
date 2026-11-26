@@ -5,13 +5,18 @@
   - [Configuration](#configuration)
     - [The Underlying Entities](#the-underlying-entities)
     - [AC Mode](#ac-mode)
+    - [Synchronization of the internal temperature of underlying entities](#synchronization-of-the-internal-temperature-of-underlying-entities)
     - [Self-Regulation](#self-regulation)
+    - [Valve regulation startup with write-only degrees](#valve-regulation-startup-with-write-only-degrees)
     - [Auto-Fan (Auto Ventilation)](#auto-fan-auto-ventilation)
     - [Compensating for the Internal Temperature of the Underlying Equipment](#compensating-for-the-internal-temperature-of-the-underlying-equipment)
   - [Specific Functions](#specific-functions)
   - [Follow Underlying Temperature Changes](#follow-underlying-temperature-changes)
+  - [Next Step](#next-step)
 
 ## Prerequisites
+
+Devices that can be controlled by an `over_climate` _VTherm_ (air conditioners, heat pumps, TRVs...) are listed in the [device catalog](https://www.versatile-thermostat.org/en/devices/?type=climate), and the thermostatic valves in the [TRV catalog](https://www.versatile-thermostat.org/en/devices/?type=trv).
 
 The installation should look like this:
 
@@ -26,7 +31,7 @@ The installation should look like this:
 ## Configuration
 
 First, configure the main settings common to all _VTherms_ (see [main settings](base-attributes.md)).
-Then, click on the "Underlying Entities" option from the menu, and you will see this configuration page:
+Then, click on the "Underlyings" option from the menu, and you will see this configuration page:
 
 ![image](images/config-linked-entity2.png)
 
@@ -36,6 +41,9 @@ In the "Equipment to Control" list, you should add the `climate` entities that w
 ### AC Mode
 
 You can choose an `over_climate` thermostat to control an air conditioner (reversible or not) by checking the "AC Mode" box. If the equipment allows it, both 'Heating' and 'Cooling' modes will be available.
+
+### Synchronization of the internal temperature of underlying entities
+This function allows for much better regulation as it synchronizes the internal thermometer of the underlying `climate` entities with the room temperature measured by _VTherm_. It is described [here](feature-sync_device_temp.md).
 
 ### Self-Regulation
 
@@ -51,12 +59,25 @@ To avoid overloading the underlying equipment (some may beep unpleasantly, other
 
 Improperly setting these thresholds may prevent correct self-regulation as new setpoints won't be sent.
 
+### Valve regulation startup with write-only degrees
+
+With `auto_regulation_valve`, some `number` entities used for opening and closing degrees are write-only setpoints. After a Home Assistant restart or an integration reload, they can remain `unknown` even though the underlying `climate` entity is usable.
+
+After installing its normal listeners, VTherm inspects the configured opening/closing pair once. Only when every target is numeric or exactly `unknown`, all regulation limits and every number entity `min`/`max` bound are valid, it calculates the normal closing pair with demand `0`. It writes at most once, through the regular number helper, and only to targets that are exactly `unknown`; numeric targets are never rewritten.
+
+If a target is `unavailable`, absent, `None`, non-numeric, or has invalid bounds, VTherm writes nothing to either target. A service call or its absence of error is not feedback: the underlying remains uninitialized until `UnderlyingStateManager` receives normal numeric state events for every required target. There is no timeout, retry, fallback, or readiness override.
+
+The diagnostics under `vtherm_over_climate_valve.underlying_valves` expose `seed_targets` and `seed_attempted_targets`; these fields describe attempts only and never availability. Check the configured entities, their `min`/`max` bounds, and numeric feedback. After correcting a configuration or device problem, reload the integration or restart Home Assistant to create a new one-shot budget.
+
 ### Auto-Fan (Auto Ventilation)
 
 This mode, introduced in version 4.3, forces the use of ventilation if the temperature difference is significant. By activating ventilation, heat distribution occurs more quickly, which helps achieve the target temperature faster.
 You can choose which ventilation level to activate from the following options: Low, Medium, High, Turbo.
 
-Of course, your underlying equipment must have ventilation, and it must be controllable for this to work. If your equipment doesn't include the Turbo mode, the High mode will be used instead. Once the temperature difference becomes small again, the ventilation will switch to a "normal" mode, which depends on your equipment (in order): `Mute`, `Auto`, `Low`. The first available mode for your equipment will be chosen.
+Of course, your underlying equipment must have ventilation, and it must be controllable for this to work. If your equipment doesn't include the Turbo mode, the High mode will be used instead. Once the temperature difference becomes small again, the ventilation will switch to a "normal" mode, which depends on your equipment (in order): `Mute`, `Quiet`, `Auto`, `Low`. The first available mode for your equipment will be chosen.
+
+> ![Tip](images/tips.png) _*External plugin*_
+> An enhanced version of auto-fan is available as an external plugin. This plugin offers additional configuration options and finer control of automatic ventilation. Check the [plugins](https://www.versatile-thermostat.org/en/plugins/#jmcollin78/vtherm_auto_fan_extended) page to discover this plugin.
 
 ### Compensating for the Internal Temperature of the Underlying Equipment
 
@@ -93,7 +114,11 @@ The specific functions that require configuration for this type of VTherm are:
 1. Auto-Start/Stop: Automatic start and stop of VTherm based on usage forecasts. This is described here: [auto-start/stop function](feature-auto-start-stop.md).
 2. If valve regulation is chosen, the TPI algorithm configuration is accessible from the menu. See ([algorithms](algorithms.md)).
 3. if valve regulation is selected, you can set the _VTherm_ to dormant (sleep) mode. The dormant mode is specific to this type of thermostat and allows you to turn off the _VTherm_ while keeping the valve fully 100% open. There are two ways to activate the dormant mode:
-   1. either with the [VTherm UI Card](additions.md#versatile-thermostat-ui-card) by pressing the 'Zzz' button mode,
+
+   > [!NOTE]
+   > The dormant mode (`sleep` / `Zzz`) requires a card compatible with Versatile Thermostat, such as the [Versatile Thermostat UI Card](additions.md#the-versatile-thermostat-ui-card). The default Home Assistant thermostat (climate) card is not supported: it lists `sleep` in `hvac_modes` but cannot select it (`climate.set_hvac_mode` rejects `sleep`, which is not a standard HA `HVACMode`).
+
+   1. either with the [VTherm UI Card](additions.md#the-versatile-thermostat-ui-card) by pressing the 'Zzz' button mode,
    2. or by calling an action named `service_set_hvac_mode_sleep`. See [Actions](reference.md#actions-services)
 
 ## Follow Underlying Temperature Changes
@@ -103,9 +128,27 @@ If you are in this case, an entity has been added to the _VTherm_ device called 
 
 ![Track temperature changes](images/entity-follow-under-temp-change.png)
 
-When this entity is 'On', all temperature or state changes made directly on the underlying equipment are reflected in _VTherm_.
+When this entity is 'On', HVAC mode changes continue to be followed as before. Setpoint tracking is active from startup, even if _VTherm_ has not yet sent an order to the TRV. A newly observed setpoint is retained as a candidate and applied if it remains stable for five seconds; each distinct new value restarts the wait. Duplicates do not extend it. If _VTherm_ has already sent a setpoint, equal or nearby values are ambiguous and are not adopted automatically. Without a sent-setpoint reference, an old distinct echo can be mistaken for a manual action.
 
-Be careful, if you use this feature, your equipment is now controlled in two ways: _VTherm_ and directly by you. The commands might be contradictory, which could lead to confusion about the equipment's state. _VTherm_ is equipped with a delay mechanism that prevents loops: the user gives a setpoint, which is captured by _VTherm_ and changes the setpoint, ... This delay may cause the change made directly on the equipment to be ignored if these changes are too close together in time.
+Be careful: your equipment is controlled in two ways, by _VTherm_ and directly by you, so commands may conflict. An admissible TRV action is handled like a manual change of the target temperature: _VTherm_ switches to a manual setpoint (`NONE`) and, if a [manual override duration](feature-timed-preset.md#manual-override-with-automatic-revert) is configured, starts a manual override that reverts to the previous preset at its end. Without a manual override duration, it cancels a running timed preset without restoring its previous request. Window and protection priorities remain unchanged. While OFF, the request is saved without turning the thermostat on or clearing a forced OFF.
+
+The tracking budget is a single counter per _VTherm_. It counts each underlying mode or target-temperature change that _VTherm_ actually adopts, as well as each tracking-induced outgoing `climate` attempt. An adoption and a resulting outgoing command can therefore use two units; merely observing or waiting on a candidate does not count. `number` service calls used for direct valve regulation are not included.
+
+Tracking is suspended when the counter reaches three. If the third debit is an outgoing attempt, that attempt is sent and the next one is blocked. If an adoption brings the counter to three, the adoption is retained but subsequent tracking-induced commands are blocked. Direct control from _VTherm_ remains available. A new command received through the _VTherm_ interface or an HA service rearms the counter. Physical actions on the underlying device and normal regulation cycles do not reset it; there is no timed reset. An automation that sends a new command to _VTherm_ can rearm the counter on every turn, so the limit applies between received commands, not to the whole loop. After a Home Assistant restart or integration reload, the counter starts at zero and tracking is rearmed. A restored TRV value without a newly observed change is not adopted; once the TRV reports a new setpoint, it can be tracked without waiting for an order from _VTherm_. Without a sent-setpoint reference, an old distinct echo can be mistaken for an action.
+
+An old return that differs from the last command can still be mistaken for a manual action; an ambiguous return can instead be rejected. The five-second wait does not prove where a change came from and does not guarantee that every action is captured or that an external automation cannot sustain a loop.
+
+Some TRVs (for example the Sonoff TRVZB) change their own setpoint when _VTherm_ turns them OFF. So a setpoint reported less than 15 seconds after _VTherm_ sent OFF to the equipment is ignored.
 
 Some equipment (like Daikin, for example) changes state by itself. If the checkbox is checked, it may turn off the _VTherm_ when that's not what you intended.
 That's why it's better not to use it. It generates a lot of confusion and many support requests.
+
+These limits are a deliberate compromise between safety and usability. They are intentionally restrictive and non-configurable by design. They will not be changed; you will have to live with these limits.
+
+> ![Tip](images/tips.png) _*Physical remote control*_
+> If you want to use a separate physical thermostat (a wall thermostat for example) as a remote control for a _VTherm_, see the [VTherm climate replication](https://www.versatile-thermostat.org/en/plugins/#jmcollin78/vtherm_climate_replication) plugin.
+
+## Next Step
+
+- With self-regulation by direct valve control: configure the [valve regulation](self-regulation.md#self-regulation-by-direct-valve-control), then the [TPI coefficients](algorithms.md#configuring-the-tpi-algorithm-coefficients).
+- Without direct valve control: adjust the [self-regulation](self-regulation.md#other-self-regulation) if needed, then go to the [presets](feature-presets.md) ("Presets" menu).

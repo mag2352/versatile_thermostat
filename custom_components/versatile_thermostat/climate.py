@@ -1,6 +1,7 @@
 """ Implements the VersatileThermostat climate component """
 
 import logging
+from vtherm_api.log_collector import get_vtherm_logger
 
 
 import voluptuous as vol
@@ -29,9 +30,9 @@ from .thermostat_switch import ThermostatOverSwitch
 from .thermostat_climate import ThermostatOverClimate
 from .thermostat_valve import ThermostatOverValve
 from .thermostat_climate_valve import ThermostatOverClimateValve
-from .vtherm_api import VersatileThermostatAPI
+from .vtherm_central_api import VersatileThermostatAPI
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -39,14 +40,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the VersatileThermostat thermostat with config flow."""
-    _LOGGER.debug(
-        "Calling async_setup_entry entry=%s, data=%s", entry.entry_id, entry.data
-    )
-
-    await async_setup_reload_service(hass, DOMAIN, PLATFORMS)
-
     unique_id = entry.entry_id
     name = entry.data.get(CONF_NAME)
+    _LOGGER.debug("%s - Calling async_setup_entry entry=%s, data=%s", name, entry.entry_id, entry.data)
+
+    await async_setup_reload_service(hass, DOMAIN, PLATFORMS)
     vt_type = entry.data.get(CONF_THERMOSTAT_TYPE)
     have_valve_regulation = (
         entry.data.get(CONF_AUTO_REGULATION_MODE) == CONF_AUTO_REGULATION_VALVE
@@ -127,7 +125,7 @@ async def async_setup_entry(
                 ["None", "Low", "Medium", "High", "Turbo"]
             ),
         },
-        "service_set_auto_fan_mode",
+        "service_set_auto_fan_mode_deprecated",
     )
 
     platform.async_register_entity_service(
@@ -170,6 +168,12 @@ async def async_setup_entry(
         {
             vol.Required("auto_tpi_mode"): vol.In([True, False]),
             vol.Optional("reinitialise", default=True): vol.In([True, False]),
+            vol.Optional("allow_kint_boost_on_stagnation", default=False): vol.In(
+                [True, False]
+            ),
+            vol.Optional(
+                "allow_kext_compensation_on_overshoot", default=False
+            ): vol.In([True, False]),
         },
         "service_set_auto_tpi_mode",
     )
@@ -179,9 +183,8 @@ async def async_setup_entry(
         {
             vol.Optional("start_date"): selector.DateTimeSelector(),
             vol.Optional("end_date"): selector.DateTimeSelector(),
-            vol.Required("hvac_mode"): vol.In(["heat", "cool"]),
             vol.Optional("save_to_config", default=False): vol.In([True, False]),
-            vol.Optional("min_power_threshold", default=100): selector.NumberSelector(
+            vol.Optional("min_power_threshold", default=95): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=80, max=100, step=1, mode=selector.NumberSelectorMode.SLIDER)
             ),
         },
@@ -189,3 +192,40 @@ async def async_setup_entry(
         supports_response=SupportsResponse.OPTIONAL,
     )
 
+    platform.async_register_entity_service(
+        SERVICE_SET_TIMED_PRESET,
+        {
+            vol.Required("preset"): cv.string,
+            vol.Required("duration_minutes"): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=1440, step=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+        },
+        "service_set_timed_preset",
+    )
+
+    platform.async_register_entity_service(
+        SERVICE_CANCEL_TIMED_PRESET,
+        {},
+        "service_cancel_timed_preset",
+    )
+
+    platform.async_register_entity_service(
+        SERVICE_RECALIBRATE_VALVES,
+        {
+            vol.Required("delay_seconds"): vol.All(vol.Coerce(int), vol.Range(min=0, max=300)),
+        },
+        "service_recalibrate_valves",
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    platform.async_register_entity_service(
+        SERVICE_DOWNLOAD_LOGS,
+        {
+            vol.Optional("log_level", default="DEBUG"): vol.In(
+                ["DEBUG", "INFO", "WARNING", "ERROR"]
+            ),
+            vol.Optional("period_start"): selector.DateTimeSelector(),
+            vol.Optional("period_end"): selector.DateTimeSelector(),
+        },
+        "service_download_logs",
+    )

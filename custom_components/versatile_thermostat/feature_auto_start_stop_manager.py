@@ -1,12 +1,15 @@
-""" Implements the Auto-start/stop Feature Manager """
+"""Implements the Auto-start/stop Feature Manager"""
 
 # pylint: disable=line-too-long
 
 import logging
+from datetime import datetime
+from vtherm_api.log_collector import get_vtherm_logger
 from typing import Any
 
 from homeassistant.core import (
     HomeAssistant,
+    callback,
 )
 
 from .const import *  # pylint: disable=wildcard-import, unused-wildcard-import
@@ -20,8 +23,7 @@ from .auto_start_stop_algorithm import (
     AutoStartStopDetectionAlgorithm,
 )
 
-
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 class FeatureAutoStartStopManager(BaseFeatureManager):
@@ -29,12 +31,8 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
 
     unrecorded_attributes = frozenset(
         {
-            "auto_start_stop_level",
-            "auto_start_stop_dtmin",
-            "auto_start_stop_enable",
-            "auto_start_stop_accumulated_error",
-            "auto_start_stop_accumulated_error_threshold",
-            "auto_start_stop_last_switch_date",
+            "is_auto_start_stop_configured",
+            "auto_start_stop_manager",
         }
     )
 
@@ -47,6 +45,12 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
         self._is_configured: bool = False
         self._is_auto_start_stop_enabled: bool = False
         self._is_auto_stop_detected: bool = False
+        self._is_inert: bool = False
+        self._stop_mode: str = AUTO_START_STOP_STOP_MODE_OFF
+
+    def set_inert(self, is_inert: bool) -> None:
+        """Enable or disable the no-op mode used while an external manager owns the feature."""
+        self._is_inert = is_inert
 
     @overrides
     def post_init(self, entry_infos: ConfigData):
@@ -57,19 +61,22 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
 
         use_auto_start_stop = entry_infos.get(CONF_USE_AUTO_START_STOP_FEATURE, False)
         if use_auto_start_stop:
-            self._auto_start_stop_level = (
-                entry_infos.get(CONF_AUTO_START_STOP_LEVEL, None)
-                or AUTO_START_STOP_LEVEL_NONE
-            )
+            self._auto_start_stop_level = entry_infos.get(CONF_AUTO_START_STOP_LEVEL, None) or AUTO_START_STOP_LEVEL_NONE
             self._is_configured = True
         else:
             self._auto_start_stop_level = AUTO_START_STOP_LEVEL_NONE
             self._is_configured = False
 
+        # Initialize the enable flag synchronously so the manager is operational
+        # without having to wait for the AutoStartStopEnable switch's
+        # async_added_to_hass callback (which is racy under test load).
+        # The switch's async_added_to_hass will later override this value
+        # from the persisted state if needed.
+        # This must mirror the default in switch.AutoStartStopEnable.
+        self._is_auto_start_stop_enabled = self._auto_start_stop_level != AUTO_START_STOP_LEVEL_NONE
+
         # Instanciate the auto start stop algo
-        self._auto_start_stop_algo = AutoStartStopDetectionAlgorithm(
-            self._auto_start_stop_level, self.name
-        )
+        self._auto_start_stop_algo = AutoStartStopDetectionAlgorithm(self._auto_start_stop_level, self.name)
 
         # Fix an eventual incoherent state
         if self._vtherm.is_on and self._vtherm.hvac_off_reason == HVAC_OFF_REASON_AUTO_START_STOP:
@@ -87,6 +94,10 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
     async def refresh_state(self) -> bool:
         """Check the auto-start-stop and an eventual action
         Return True is auto stop is detected"""
+
+        if self._is_inert:
+            _LOGGER.debug("%s - auto start/stop core manager is inert", self)
+            return self._is_auto_stop_detected
 
         if not self._is_configured or not self._is_auto_start_stop_enabled:
             _LOGGER.debug("%s - auto start/stop is disabled (or not configured)", self)
@@ -115,7 +126,7 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
                             "type": "stop",
                             "name": self.name,
                             "cause": "Auto stop conditions reached",
-                            "hvac_mode": str(VThermHvacMode_OFF),
+                            "hvac_mode": str(self.stop_mode),
                             "saved_hvac_mode": str(self._vtherm.requested_state.hvac_mode),
                             "target_temperature": self._vtherm.target_temperature,
                             "current_temperature": self._vtherm.current_temperature,
@@ -172,7 +183,7 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
 
             # Send an event if the vtherm was off due to auto-start/stop and enable has been set to false
             if not is_enabled and self._vtherm.hvac_mode == VThermHvacMode_OFF and self._vtherm.hvac_off_reason == HVAC_OFF_REASON_AUTO_START_STOP:
-                _LOGGER.debug("%s - the vtherm is off cause auto-start/stop and enable have been set to false -> starts the VTherm")
+                _LOGGER.debug("%s - the vtherm is off cause auto-start/stop and enable have been set to false -> starts the VTherm", self)
                 # Send an event
                 self._vtherm.send_event(
                     event_type=EventType.AUTO_START_STOP_EVENT,
@@ -196,30 +207,71 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
 
             self._vtherm.update_custom_attributes()
 
-        # if self._vtherm.hvac_mode == VThermHvacMode_OFF and self._vtherm.hvac_off_reason == HVAC_OFF_REASON_AUTO_START_STOP:
-        #    _LOGGER.debug(
-        #        "%s - the vtherm is off cause auto-start/stop and enable have been set to false -> starts the VTherm"
-        #    )
-        #    self.hass.create_task(self._vtherm.async_turn_on())
-        #
-        #    # Send an event
-        #    self._vtherm.send_event(
-        #        event_type=EventType.AUTO_START_STOP_EVENT,
-        #        data={
-        #            "type": "start",
-        #            "name": self.name,
-        #            "cause": "Auto start stop disabled",
-        #            "hvac_mode": self._vtherm.hvac_mode,
-        #            "saved_hvac_mode": self._vtherm.requested_state.hvac_mode,
-        #            "target_temperature": self._vtherm.target_temperature,
-        #            "current_temperature": self._vtherm.current_temperature,
-        #            "temperature_slope": round(self._vtherm.last_temperature_slope or 0, 3),
-        #            "accumulated_error": self._auto_start_stop_algo.accumulated_error,
-        #            "accumulated_error_threshold": self._auto_start_stop_algo.accumulated_error_threshold,
-        #        },
-        #    )
-        #
-        # self._vtherm.update_custom_attributes()
+    async def set_auto_start_stop_stop_mode(self, stop_mode: str):
+        """Set the hvac_mode to apply when a stop is detected (off/fan_only/dry).
+
+        If a stop is currently active, the new mode is applied immediately
+        while the stop state is kept."""
+        if self._stop_mode == stop_mode:
+            return
+
+        write_event_log(_LOGGER, self._vtherm, f"Auto start/stop stop mode changed from {self._stop_mode} to {stop_mode}")
+        self._stop_mode = stop_mode
+
+        # If a stop is currently active, re-evaluate the state so the hvac_mode
+        # reflects the new choice immediately while keeping the stop state.
+        if self._is_auto_stop_detected:
+            self._vtherm.requested_state.force_changed()
+            await self._vtherm.update_states(force=True)
+
+        self._vtherm.update_custom_attributes()
+
+    @callback
+    @overrides
+    def restore_state(self, old_state) -> None:
+        """Restore the auto start/stop manager state after a Home Assistant restart.
+
+        Restores:
+        - _is_auto_stop_detected: so the VTherm stays off if it was auto-stopped
+        - algo._accumulated_error: so the algorithm continues from where it left off
+        - algo._last_switch_date: to prevent rapid ON/OFF switching after restart
+        - algo._last_should_be_off: kept in sync with _is_auto_stop_detected
+        """
+        if old_state is None:
+            return
+
+        manager_attr = old_state.attributes.get("auto_start_stop_manager")
+        if not manager_attr:
+            return
+
+        # Restore the manager-level detected state
+        self._is_auto_stop_detected = bool(manager_attr.get("is_auto_stop_detected", False))
+
+        # Restore algorithm intermediate state
+        if self._auto_start_stop_algo is not None:
+            accumulated_error = manager_attr.get("auto_start_stop_accumulated_error")
+            if accumulated_error is not None:
+                self._auto_start_stop_algo._accumulated_error = float(accumulated_error)
+
+            last_switch_date_raw = manager_attr.get("auto_start_stop_last_switch_date")
+            if last_switch_date_raw is not None:
+                if isinstance(last_switch_date_raw, str):
+                    try:
+                        self._auto_start_stop_algo._last_switch_date = datetime.fromisoformat(last_switch_date_raw)
+                    except (ValueError, TypeError) as err:
+                        _LOGGER.warning("%s - restore_state: could not parse last_switch_date '%s': %s", self, last_switch_date_raw, err)
+                else:
+                    self._auto_start_stop_algo._last_switch_date = last_switch_date_raw
+
+            # Keep algo's internal flag in sync with the manager state
+            self._auto_start_stop_algo._last_should_be_off = self._is_auto_stop_detected
+
+        _LOGGER.info(
+            "%s - restore_state: is_auto_stop_detected=%s, accumulated_error=%s",
+            self,
+            self._is_auto_stop_detected,
+            manager_attr.get("auto_start_stop_accumulated_error"),
+        )
 
     def add_custom_attributes(self, extra_state_attributes: dict[str, Any]):
         """Add some custom attributes"""
@@ -239,12 +291,18 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
                         "auto_start_stop_accumulated_error_threshold": self._auto_start_stop_algo.accumulated_error_threshold,
                         "auto_start_stop_last_switch_date": self._auto_start_stop_algo.last_switch_date,
                         "is_auto_stop_detected": self.is_auto_stop_detected,
+                        "auto_start_stop_stop_mode": self._stop_mode,
                     }
                 }
             )
 
     @property
     def is_auto_stop_detected(self) -> bool:
+        """Return True if the auto-start/stop feature is detected"""
+        return self._is_auto_stop_detected
+
+    @property
+    def is_detected(self) -> bool:
         """Return True if the auto-start/stop feature is detected"""
         return self._is_auto_stop_detected
 
@@ -265,9 +323,21 @@ class FeatureAutoStartStopManager(BaseFeatureManager):
         return self._is_auto_start_stop_enabled
 
     @property
+    def stop_mode(self) -> VThermHvacMode:
+        """Return the hvac_mode to apply when a stop is detected (off/fan_only/dry)"""
+        return VThermHvacMode(self._stop_mode)
+
+    @property
     def is_auto_stopped(self) -> bool:
         """Returns the is vtherm is stopped and reason is AUTO_START_STOP"""
         return self._vtherm.hvac_mode == VThermHvacMode_OFF and self._vtherm.hvac_off_reason == HVAC_OFF_REASON_AUTO_START_STOP
+
+    def reset_switch_delay(self):
+        """Reset the switch delay in the algorithm to allow immediate restart.
+        Should be called when target temperature changes significantly.
+        """
+        if self._auto_start_stop_algo:
+            self._auto_start_stop_algo.reset_switch_delay()
 
     def __str__(self):
         return f"AutoStartStopManager-{self.name}"

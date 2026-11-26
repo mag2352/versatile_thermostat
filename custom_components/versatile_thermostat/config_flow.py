@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 import re
-import logging
+from vtherm_api.log_collector import get_vtherm_logger
 import copy
 from collections.abc import Mapping  # pylint: disable=import-error
 import voluptuous as vol
@@ -16,17 +16,23 @@ from homeassistant.config_entries import (
     ConfigFlow as HAConfigFlow,
     OptionsFlow,
 )
+from homeassistant.const import UnitOfTemperature
 
 from homeassistant.data_entry_flow import FlowHandler, FlowResult
+from homeassistant.exceptions import TemplateError
+from homeassistant.helpers.template import Template
 
 from .const import *  # pylint: disable=wildcard-import, unused-wildcard-import
 from .config_schema import *  # pylint: disable=wildcard-import, unused-wildcard-import
-from .vtherm_api import VersatileThermostatAPI
+from .vtherm_central_api import VersatileThermostatAPI
 from .commons import check_and_extract_service_configuration
+from .humidity import find_humidity_sensor_candidates
 
 COMES_FROM = "comes_from"
+PLUGINS_LINK_PLACEHOLDER = "plugins_link"
+PLUGINS_LINK = "[plugins](https://www.versatile-thermostat.org/en/plugins/)"
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 def add_suggested_values_to_schema(
     data_schema: vol.Schema, suggested_values: Mapping[str, Any]
@@ -55,14 +61,15 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
     VERSION = CONFIG_VERSION
     MINOR_VERSION = CONFIG_MINOR_VERSION
 
-    _placeholders = {
-        CONF_NAME: "",
-    }
-
     def __init__(self, infos) -> None:
         super().__init__()
         _LOGGER.debug("CTOR BaseConfigFlow infos: %s", infos)
         self._infos: dict = infos
+        self._learning_type_changed = False
+        self._placeholders = {
+            CONF_NAME: "",
+            PLUGINS_LINK_PLACEHOLDER: PLUGINS_LINK,
+        }
 
         # VTherm API should have been initialized before arriving here
         vtherm_api = VersatileThermostatAPI.get_vtherm_api()
@@ -109,6 +116,10 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
             and self._infos.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_CLIMATE
         )
 
+        self._infos[CONF_USE_HEATING_FAILURE_DETECTION_FEATURE] = self._infos.get(
+            CONF_USE_HEATING_FAILURE_DETECTION_FEATURE, False
+        )
+
     def _init_central_config_flags(self, infos):
         """Initialisation of central configuration flags"""
         is_empty: bool = not bool(infos)
@@ -143,6 +154,10 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         """True of the valve regulation mode is selected"""
         return infos.get(CONF_AUTO_REGULATION_MODE, None) == CONF_AUTO_REGULATION_VALVE
 
+    def is_sync_device_internal_temp_selected(self, infos) -> bool:
+        """True if the synchronize device internal temperature mode is selected"""
+        return infos.get(CONF_SYNC_DEVICE_INTERNAL_TEMP, False) is True
+
     def check_valve_regulation_nb_entities(self, data: dict, step_id=None) -> bool:
         """Check the number of entities for Valve regulation"""
         if step_id not in ["type", "valve_regulation", "check_complete"]:
@@ -160,20 +175,30 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
             and step_id != "type"
         ):
             nb_unders = len(underlyings_to_check.get(CONF_UNDERLYING_LIST))
-            nb_offset = len(
-                regulation_infos_to_check.get(CONF_OFFSET_CALIBRATION_LIST, [])
-            )
             nb_opening = len(
                 regulation_infos_to_check.get(CONF_OPENING_DEGREE_LIST, [])
             )
             nb_closing = len(
                 regulation_infos_to_check.get(CONF_CLOSING_DEGREE_LIST, [])
             )
-            if (
-                nb_unders != nb_opening
-                or (nb_unders != nb_offset and nb_offset > 0)
-                or (nb_unders != nb_closing and nb_closing > 0)
-            ):
+            if nb_unders != nb_opening or (nb_unders != nb_closing and nb_closing > 0):
+                ret = False
+        return ret
+
+    def check_sync_device_internal_temp_nb_entities(self, data: dict, step_id=None) -> bool:
+        """Check the number of entities for synchronize device internal temperature"""
+        if step_id not in ["type", "sync_device_internal_temp", "check_complete"]:
+            return True
+
+        underlyings_to_check = data if step_id == "type" else self._infos
+        # underlyings_to_check = self._infos  # data if step_id == "type" else self._infos
+        regulation_infos_to_check = data if step_id == "sync_device_internal_temp" else self._infos
+
+        ret = True
+        if self.is_sync_device_internal_temp_selected(underlyings_to_check) and step_id != "type":
+            nb_unders = len(underlyings_to_check.get(CONF_UNDERLYING_LIST))
+            nb_sync = len(regulation_infos_to_check.get(CONF_SYNC_ENTITY_LIST, []))
+            if nb_unders != nb_sync:
                 ret = False
         return ret
 
@@ -187,6 +212,7 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         for conf in [
             CONF_UNDERLYING_LIST,
             CONF_TEMP_SENSOR,
+            CONF_HUMIDITY_SENSOR,
             CONF_EXTERNAL_TEMP_SENSOR,
             CONF_WINDOW_SENSOR,
             CONF_MOTION_SENSOR,
@@ -232,6 +258,7 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
                 CONF_USE_PRESENCE_CENTRAL_CONFIG,
                 CONF_USE_PRESETS_CENTRAL_CONFIG,
                 CONF_USE_ADVANCED_CENTRAL_CONFIG,
+                CONF_USE_LOCK_CENTRAL_CONFIG,
                 CONF_USE_CENTRAL_MODE,
                 # CONF_USE_CENTRAL_BOILER_FEATURE, this is for Central Config
                 CONF_USED_BY_CENTRAL_BOILER,
@@ -249,8 +276,10 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
                 CONF_CENTRAL_BOILER_DEACTIVATION_SRV,
             ]:
                 try:
-                    check_and_extract_service_configuration(data.get(conf))
-                except ServiceConfigurationError as err:
+                    service_config = check_and_extract_service_configuration(data.get(conf))
+                    if service_config.get("is_template"):
+                        Template(service_config["attribute_value"], self.hass).ensure_valid()
+                except (ServiceConfigurationError, TemplateError) as err:
                     raise ServiceConfigurationError(conf) from err
 
         # Check that the number of offet_calibration and opening_degree and closing_degree are equals
@@ -258,30 +287,106 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         if not self.check_valve_regulation_nb_entities(data, step_id):
             raise ValveRegulationNbEntitiesIncorrect()
 
+        if not self.check_sync_device_internal_temp_nb_entities(data, step_id):
+            raise SyncDeviceInternalTempNbEntitiesIncorrect()
+
+        # Validate the min/max opening degrees control parameters.
+        # This is shared between over_valve (step 'type': valves are the underlying
+        # entities) and over_climate with valve regulation (step 'valve_regulation':
+        # valves are the opening degree entities)
+        valve_entities = data.get(CONF_OPENING_DEGREE_LIST) or data.get(
+            CONF_UNDERLYING_LIST
+        )
+        self._validate_valve_control_parameters(data, valve_entities or [])
+
+        # These validations depend on the active configuration-flow step and
+        # do not belong to the shared valve parameter validation.
+        if (
+            self._infos.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_SWITCH
+            and step_id == "type"
+        ):
+            if not self.check_vswitch_configuration(data):
+                raise VirtualSwitchConfigurationIncorrect(CONF_VSWITCH_ON_CMD_LIST)
+
+        if data.get(CONF_LOCK_CODE) is not None:
+            if not re.match(r"^\d{4}$", str(data.get(CONF_LOCK_CODE))):
+                raise LockCodeIncorrect()
+
+    def _validate_valve_control_parameters(
+        self, data: dict, valve_entities: list
+    ) -> None:
+        """Validate the valve control parameters (min/max opening degrees, cardinality).
+
+        Shared between over_valve (step 'type') and over_climate valve regulation
+        (step 'valve_regulation'). Raises the ValveRegulation* exceptions.
+        """
         # Check that the min_opening_degrees is correctly set
+        min_opening_degrees_list: list[int] = []
         raw_list = data.get(CONF_MIN_OPENING_DEGREES, None)
         if raw_list:
             try:
-                # Validation : Convertir la liste saisie
-                int_list = [int(x.strip()) for x in raw_list.split(",")]
-
-                # Optionnel : Vérifiez des conditions supplémentaires sur la liste
-                if any(x < 0 for x in int_list):
+                min_opening_degrees_list = [int(x.strip()) for x in raw_list.split(",")]
+                if any(x < 0 for x in min_opening_degrees_list):
                     raise ValueError
             except ValueError as exc:
                 raise ValveRegulationMinOpeningDegreesIncorrect(
                     CONF_MIN_OPENING_DEGREES
                 ) from exc
 
-        # Check the VSWITCH configuration. There should be the same number of vswitch_on (resp. vswitch_off) than the number of underlying entity
-        if self._infos.get(CONF_THERMOSTAT_TYPE) == CONF_THERMOSTAT_SWITCH and step_id == "type":
-            if not self.check_vswitch_configuration(data):
-                raise VirtualSwitchConfigurationIncorrect(CONF_VSWITCH_ON_CMD_LIST)
+        # Check that the max_opening_degrees is correctly set
+        max_opening_degrees_list: list[int] = []
+        raw_list = data.get(CONF_MAX_OPENING_DEGREES, None)
+        if raw_list:
+            try:
+                max_opening_degrees_list = [int(x.strip()) for x in raw_list.split(",")]
+                if len(max_opening_degrees_list) > len(valve_entities):
+                    raise ValveRegulationCardinalityIncorrect(
+                        CONF_MAX_OPENING_DEGREES
+                    )
+                # max opening degrees should be > 0 and <= the max of the underlying valve
+                for valve_idx, valve_max in enumerate(max_opening_degrees_list):
+                    valve_state = self.hass.states.get(valve_entities[valve_idx])
+                    if (
+                        valve_max <= 0
+                        or valve_state is None
+                        or valve_max > valve_state.attributes.get("max", 100)
+                    ):
+                        raise ValueError
+            except ValveRegulationCardinalityIncorrect:
+                raise
+            except ValueError as exc:
+                raise ValveRegulationMaxOpeningDegreesIncorrect(
+                    CONF_MAX_OPENING_DEGREES
+                ) from exc
 
-        # Check the lock code format
-        if data.get(CONF_LOCK_CODE) is not None:
-            if not re.match(r"^\d{4}$", str(data.get(CONF_LOCK_CODE))):
-                raise LockCodeIncorrect()
+        # Check that the min/max lists don't contain more values than the number of valves
+        # (the rule is now also applied to over_climate valve regulation)
+        nb_valves = len(valve_entities or [])
+        for lst in (min_opening_degrees_list, max_opening_degrees_list):
+            if len(lst) > nb_valves:
+                raise ValveRegulationCardinalityIncorrect(
+                    CONF_MIN_OPENING_DEGREES
+                    if lst is min_opening_degrees_list
+                    else CONF_MAX_OPENING_DEGREES
+                )
+
+        # Check that max_opening_degrees > min_opening_degrees for each valve
+        # (default values are 0 and 100 for indexes beyond the lists)
+        for idx in range(nb_valves):
+            min_val = (
+                min_opening_degrees_list[idx]
+                if idx < len(min_opening_degrees_list)
+                else 0
+            )
+            max_val = (
+                max_opening_degrees_list[idx]
+                if idx < len(max_opening_degrees_list)
+                else self.hass.states.get(valve_entities[idx]).attributes.get("max", 100)
+            )
+            if max_val <= min_val:
+                raise ValveRegulationMinMaxOpeningDegreesIncorrect(
+                    CONF_MAX_OPENING_DEGREES
+                )
 
     def check_vswitch_configuration(self, data) -> bool:
         """Check the Virtual switch configuration and return True if the configuration is correct"""
@@ -289,7 +394,7 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
 
         # check format of each command_on
         for command in data.get(CONF_VSWITCH_ON_CMD_LIST, []) + data.get(CONF_VSWITCH_OFF_CMD_LIST, []):
-            pattern = r"^(?P<command>[a-zA-Z0-9_]+)(?:/(?P<argument>[a-zA-Z0-9_]+)(?::(?P<value>[a-zA-Z0-9_]+))?)?$"
+            pattern = r"^(?P<command>[^\s/]+)(?:/(?P<argument>[^\s:]+)(?::(?P<value>[^\s]+))?)?$"
             if not re.match(pattern, command):
                 return False
 
@@ -395,6 +500,9 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
             if not self.check_valve_regulation_nb_entities(infos, "check_complete"):
                 return False
 
+            if not self.check_sync_device_internal_temp_nb_entities(infos, "check_complete"):
+                return False
+
         return True
 
     def merge_user_input(self, data_schema: vol.Schema, user_input: dict):
@@ -437,8 +545,16 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
                 errors["base"] = "configuration_not_complete"
             except ValveRegulationNbEntitiesIncorrect as err:
                 errors["base"] = "valve_regulation_nb_entities_incorrect"
+            except SyncDeviceInternalTempNbEntitiesIncorrect as err:
+                errors["base"] = "sync_device_internal_temp_nb_entities_incorrect"
             except ValveRegulationMinOpeningDegreesIncorrect as err:
                 errors[str(err)] = "min_opening_degrees_format"
+            except ValveRegulationMaxOpeningDegreesIncorrect as err:
+                errors[str(err)] = "max_opening_degrees_format"
+            except ValveRegulationMinMaxOpeningDegreesIncorrect as err:
+                errors[str(err)] = "min_max_opening_degrees_inconsistent"
+            except ValveRegulationCardinalityIncorrect as err:
+                errors[str(err)] = "valve_control_parameters_cardinality_incorrect"
             except VirtualSwitchConfigurationIncorrect as err:
                 errors["base"] = "vswitch_configuration_incorrect"
             except LockCodeIncorrect:
@@ -469,9 +585,28 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         """Handle the flow steps"""
         _LOGGER.debug("Into ConfigFlow.async_step_user user_input=%s", user_input)
 
-        return await self.generic_step(
-            "user", STEP_USER_DATA_SCHEMA, user_input, self.async_step_menu
-        )
+        # Always do a fresh lookup (not from __init__ cache) to handle same-session deletions
+        vtherm_api = VersatileThermostatAPI.get_vtherm_api()
+        central_config = vtherm_api.find_central_configuration() if vtherm_api else None
+
+        # Exclude the central config type if one already exists (it must be unique)
+        if central_config is not None:
+            available_types = [t for t in CONF_THERMOSTAT_TYPES if t != CONF_THERMOSTAT_CENTRAL_CONFIG]
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_THERMOSTAT_TYPE, default=CONF_THERMOSTAT_SWITCH): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=available_types,
+                            translation_key="thermostat_type",
+                            mode="list",
+                        )
+                    )
+                }
+            )
+        else:
+            schema = STEP_USER_DATA_SCHEMA
+
+        return await self.generic_step("user", schema, user_input, self.async_step_menu)
 
     async def async_step_configuration_not_complete(
         self, user_input: dict | None = None
@@ -531,8 +666,17 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         if self.is_valve_regulation_selected(self._infos):
             menu_options.append("valve_regulation")
 
+        if self._infos.get(CONF_SYNC_DEVICE_INTERNAL_TEMP, False) is True:
+            menu_options.append("sync_device_internal_temp")
+
         menu_options.append("advanced")
         menu_options.append("lock")
+        if not is_central_config:
+            menu_options.append("humidity")
+
+        # Add heating failure detection menu if feature is enabled
+        if self._infos.get(CONF_USE_HEATING_FAILURE_DETECTION_FEATURE, False) is True:
+            menu_options.append("heating_failure_detection")
 
         if self.check_config_complete(self._infos):
             menu_options.append("finalize")
@@ -566,6 +710,19 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
                     del self._infos[COMES_FROM]
                 else:
                     next_step = self.async_step_spec_main
+
+        # Add default values for temperature if not set
+        if self._infos.get(CONF_TEMP_MIN) is None:
+            # We use the system default unit
+            unit = self.hass.config.units.temperature_unit
+            if unit == UnitOfTemperature.FAHRENHEIT:
+                self._infos[CONF_TEMP_MIN] = 45
+                self._infos[CONF_TEMP_MAX] = 95
+                self._infos[CONF_STEP_TEMPERATURE] = 1.0
+            else:
+                self._infos[CONF_TEMP_MIN] = 7
+                self._infos[CONF_TEMP_MAX] = 35
+                self._infos[CONF_STEP_TEMPERATURE] = 0.1
 
         return await self.generic_step("main", schema, user_input, next_step)
 
@@ -601,6 +758,12 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         """Handle the Type flow steps"""
         _LOGGER.debug("Into ConfigFlow.async_step_type user_input=%s", user_input)
 
+        if self._infos[CONF_THERMOSTAT_TYPE] == CONF_THERMOSTAT_VALVE:
+            values = user_input if user_input is not None else self._infos
+            if CONF_OPENING_THRESHOLD_DEGREE in values:
+                regulation_threshold = values.get(CONF_AUTO_REGULATION_DTEMP, 0)
+                values[CONF_OPENING_THRESHOLD_DEGREE] = max(values[CONF_OPENING_THRESHOLD_DEGREE], regulation_threshold)
+
         if (
             self._infos[CONF_THERMOSTAT_TYPE] == CONF_THERMOSTAT_CLIMATE
             and user_input is not None
@@ -620,11 +783,11 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
 
         if self._infos[CONF_THERMOSTAT_TYPE] == CONF_THERMOSTAT_SWITCH:
             return await self.generic_step(
-                "type", STEP_THERMOSTAT_SWITCH, user_input, self.async_step_menu
+                "type", build_step_thermostat_switch_schema(), user_input, self.async_step_menu
             )
         elif self._infos[CONF_THERMOSTAT_TYPE] == CONF_THERMOSTAT_VALVE:
             return await self.generic_step(
-                "type", STEP_THERMOSTAT_VALVE, user_input, self.async_step_menu
+                "type", build_step_thermostat_valve_schema(), user_input, self.async_step_menu
             )
         else:
             return await self.generic_step(
@@ -671,13 +834,45 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
             "Into ConfigFlow.async_step_valve_regulation user_input=%s", user_input
         )
 
-        schema = STEP_VALVE_REGULATION
+        values = user_input if user_input is not None else self._infos
+        if CONF_OPENING_THRESHOLD_DEGREE in values:
+            regulation_threshold = self._infos.get(CONF_AUTO_REGULATION_DTEMP, 0)
+            values[CONF_OPENING_THRESHOLD_DEGREE] = max(values[CONF_OPENING_THRESHOLD_DEGREE], regulation_threshold)
+
+        schema = build_step_valve_regulation_schema()
         self._infos[COMES_FROM] = None
         next_step = self.async_step_menu
 
         return await self.generic_step(
             "valve_regulation", schema, user_input, next_step
         )
+
+    async def async_step_sync_device_internal_temp(self, user_input: dict | None = None) -> FlowResult:
+        """Handle the synchronize device internal temperature configuration step"""
+        _LOGGER.debug("Into ConfigFlow.async_step_sync_device_internal_temp user_input=%s", user_input)
+
+        schema = STEP_SYNC_DEVICE_INTERNAL_TEMP
+        self._infos[COMES_FROM] = None
+        next_step = self.async_step_menu
+
+        return await self.generic_step("sync_device_internal_temp", schema, user_input, next_step)
+
+    async def async_step_humidity(self, user_input: dict | None = None) -> FlowResult:
+        """Handle the optional external humidity sensor configuration."""
+        _LOGGER.debug("Into ConfigFlow.async_step_humidity user_input=%s", user_input)
+
+        if user_input is not None and not user_input.get(CONF_USE_HUMIDITY_FEATURE):
+            user_input = user_input.copy()
+            user_input.pop(CONF_HUMIDITY_SENSOR, None)
+
+        candidates = find_humidity_sensor_candidates(self.hass, self._infos.get(CONF_TEMP_SENSOR))
+        detected_sensor = candidates[0] if candidates else None
+        self._placeholders["humidity_detected"] = detected_sensor or "none"
+        schema = STEP_HUMIDITY_DATA_SCHEMA
+        if user_input is None and self._infos.get(CONF_HUMIDITY_SENSOR) is None:
+            schema = add_suggested_values_to_schema(schema, {CONF_HUMIDITY_SENSOR: detected_sensor})
+
+        return await self.generic_step("humidity", schema, user_input, self.async_step_menu)
 
     async def async_step_tpi(self, user_input: dict | None = None) -> FlowResult:
         """Handle the TPI flow steps"""
@@ -695,11 +890,11 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
                         schema = STEP_CENTRAL_TPI_DATA_SCHEMA
                         del self._infos[COMES_FROM]
                         if user_input.get(CONF_AUTO_TPI_MODE) is True:
-                            next_step = self.async_step_auto_tpi_1
+                            next_step = self.async_step_auto_tpi_configuration
                     else:
                         next_step = self.async_step_spec_tpi
                 elif user_input.get(CONF_AUTO_TPI_MODE) is True:
-                    next_step = self.async_step_auto_tpi_1
+                    next_step = self.async_step_auto_tpi_configuration
 
         return await self.generic_step("tpi", schema, user_input, next_step)
 
@@ -712,61 +907,88 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
         next_step = self.async_step_menu
 
         if user_input and user_input.get(CONF_AUTO_TPI_MODE) is True:
-            next_step = self.async_step_auto_tpi_1
+            next_step = self.async_step_auto_tpi_configuration
 
         return await self.generic_step("tpi", schema, user_input, next_step)
 
-    async def async_step_auto_tpi_1(self, user_input: dict | None = None) -> FlowResult:
-        """Handle the Auto TPI step 1"""
+    async def async_step_auto_tpi_configuration(self, user_input: dict | None = None) -> FlowResult:
+        """Handle the Auto TPI configuration step"""
         _LOGGER.debug(
-            "Into ConfigFlow.async_step_auto_tpi_1 user_input=%s", user_input
+            "Into ConfigFlow.async_step_auto_tpi_configuration user_input=%s", user_input
         )
-        schema = STEP_AUTO_TPI_1_SCHEMA
+        schema = STEP_AUTO_TPI_CONFIGURATION_SCHEMA
 
         # Logic for next step
-        # Since step 2 has been removed, move directly to the new step 2 (old step 3)
-        next_step = self.async_step_auto_tpi_2
+        next_step = self._step_auto_tpi_after_configuration
 
-        return await self.generic_step("auto_tpi_1", schema, user_input, next_step)
+        # Update placeholders with unit
+        self._placeholders["temperature_unit"] = self.hass.config.units.temperature_unit
+        self._placeholders["unit"] = self.hass.config.units.temperature_unit
 
-    async def async_step_auto_tpi_2(self, user_input: dict | None = None) -> FlowResult:
-        """Handle the Auto TPI step 2 (previously step 3)"""
-        _LOGGER.debug(
-            "Into ConfigFlow.async_step_auto_tpi_2 user_input=%s", user_input
-        )
-        schema = STEP_AUTO_TPI_2_SCHEMA
-
-        next_step = self.async_step_auto_tpi_3_avg  # Default
         if user_input is not None:
-            if (
-                user_input.get(CONF_AUTO_TPI_CALCULATION_METHOD)
-                == AUTO_TPI_METHOD_EMA
-            ):
-                next_step = self.async_step_auto_tpi_3_ema
+            new_type = user_input.get(CONF_AUTO_TPI_LEARNING_TYPE)
+            old_type = self._infos.get(CONF_AUTO_TPI_LEARNING_TYPE)
+            if new_type != old_type:
+                self._learning_type_changed = True
 
-        return await self.generic_step("auto_tpi_2", schema, user_input, next_step)
+        return await self.generic_step("auto_tpi_configuration", schema, user_input, next_step)
 
-    async def async_step_auto_tpi_3_avg(
+    async def _step_auto_tpi_after_configuration(self, user_input: dict | None = None) -> FlowResult:
+        """Logic after step 1"""
+        # Apply defaults if learning type changed or method not set
+        if getattr(self, "_learning_type_changed", False) or self._infos.get(CONF_AUTO_TPI_CALCULATION_METHOD) is None:
+            self._apply_learning_type_defaults()
+            self._learning_type_changed = False
+
+        if self._infos.get(CONF_AUTO_TPI_ENABLE_ADVANCED_SETTINGS, False):
+            # Direct jump to method step
+            if self._infos.get(CONF_AUTO_TPI_CALCULATION_METHOD) == AUTO_TPI_METHOD_EMA:
+                return await self.async_step_auto_tpi_ema_settings()
+            else:
+                return await self.async_step_auto_tpi_avg_settings()
+        else:
+            return await self.async_step_menu()
+
+    def _apply_learning_type_defaults(self):
+        """Apply defaults based on learning type"""
+        learning_type = self._infos.get(CONF_AUTO_TPI_LEARNING_TYPE)
+
+        if learning_type == AUTO_TPI_LEARNING_TYPE_DISCOVERY:
+            # Discovery -> Weighted Average, Weight 1
+            self._infos[CONF_AUTO_TPI_CALCULATION_METHOD] = AUTO_TPI_METHOD_AVG
+            self._infos[CONF_AUTO_TPI_AVG_INITIAL_WEIGHT] = 1
+        elif learning_type == AUTO_TPI_LEARNING_TYPE_FINE_TUNING:
+            # Fine Tuning -> EMA, Alpha 0.08, Decay 0.12
+            self._infos[CONF_AUTO_TPI_CALCULATION_METHOD] = AUTO_TPI_METHOD_EMA
+            self._infos[CONF_AUTO_TPI_EMA_ALPHA] = 0.08
+            self._infos[CONF_AUTO_TPI_EMA_DECAY_RATE] = 0.12
+
+    async def async_step_auto_tpi_avg_settings(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        """Handle the Auto TPI step 3 avg (previously step 4)"""
+        """Handle the Auto TPI average settings step"""
         _LOGGER.debug(
-            "Into ConfigFlow.async_step_auto_tpi_3_avg user_input=%s", user_input
+            "Into ConfigFlow.async_step_auto_tpi_avg_settings user_input=%s", user_input
         )
-        schema = STEP_AUTO_TPI_3_AVG_SCHEMA
+        schema = STEP_AUTO_TPI_AVG_SETTINGS_SCHEMA
         next_step = self.async_step_menu
-        return await self.generic_step("auto_tpi_3_avg", schema, user_input, next_step)
 
-    async def async_step_auto_tpi_3_ema(
+        # Update placeholders with unit
+        self._placeholders["temperature_unit"] = self.hass.config.units.temperature_unit
+        self._placeholders["unit"] = self.hass.config.units.temperature_unit
+
+        return await self.generic_step("auto_tpi_avg_settings", schema, user_input, next_step)
+
+    async def async_step_auto_tpi_ema_settings(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        """Handle the Auto TPI step 3 ema (previously step 4)"""
+        """Handle the Auto TPI EMA settings step"""
         _LOGGER.debug(
-            "Into ConfigFlow.async_step_auto_tpi_3_ema user_input=%s", user_input
+            "Into ConfigFlow.async_step_auto_tpi_ema_settings user_input=%s", user_input
         )
-        schema = STEP_AUTO_TPI_3_EMA_SCHEMA
+        schema = STEP_AUTO_TPI_EMA_SETTINGS_SCHEMA
         next_step = self.async_step_menu
-        return await self.generic_step("auto_tpi_3_ema", schema, user_input, next_step)
+        return await self.generic_step("auto_tpi_ema_settings", schema, user_input, next_step)
 
     async def async_step_presets(self, user_input: dict | None = None) -> FlowResult:
         """Handle the presets flow steps"""
@@ -1034,6 +1256,38 @@ class VersatileThermostatBaseConfigFlow(FlowHandler):
 
         return await self.generic_step("lock", schema, user_input, next_step)
 
+    async def async_step_heating_failure_detection(self, user_input: dict | None = None) -> FlowResult:
+        """Handle the heating failure detection flow steps"""
+        _LOGGER.debug("Into ConfigFlow.async_step_heating_failure_detection user_input=%s", user_input)
+
+        next_step = self.async_step_menu
+        if self._infos[CONF_THERMOSTAT_TYPE] == CONF_THERMOSTAT_CENTRAL_CONFIG:
+            schema = STEP_CENTRAL_HEATING_FAILURE_DETECTION_SCHEMA
+        else:
+            schema = STEP_HEATING_FAILURE_DETECTION_SCHEMA
+
+            if user_input and user_input.get(CONF_USE_HEATING_FAILURE_DETECTION_CENTRAL_CONFIG, False) is False:
+                if user_input and self._infos.get(COMES_FROM) == "async_step_spec_heating_failure_detection":
+                    schema = STEP_CENTRAL_HEATING_FAILURE_DETECTION_SCHEMA
+                    del self._infos[COMES_FROM]
+                else:
+                    next_step = self.async_step_spec_heating_failure_detection
+
+        return await self.generic_step("heating_failure_detection", schema, user_input, next_step)
+
+    async def async_step_spec_heating_failure_detection(self, user_input: dict | None = None) -> FlowResult:
+        """Handle the specific heating failure detection flow steps"""
+        _LOGGER.debug("Into ConfigFlow.async_step_spec_heating_failure_detection user_input=%s", user_input)
+
+        # here we reuse the central schema because it is the same for non central config
+        schema = STEP_CENTRAL_HEATING_FAILURE_DETECTION_SCHEMA
+
+        self._infos[COMES_FROM] = "async_step_spec_heating_failure_detection"
+
+        next_step = self.async_step_heating_failure_detection
+
+        return await self.generic_step("heating_failure_detection", schema, user_input, next_step)
+
     async def async_step_finalize(self, _):
         """Finalize the creation. Should be overriden by underlyings"""
         if not self._infos[CONF_USE_WINDOW_FEATURE]:
@@ -1127,6 +1381,7 @@ class VersatileThermostatOptionsFlowHandler(
 
         self._placeholders = {
             CONF_NAME: self._infos[CONF_NAME],
+            PLUGINS_LINK_PLACEHOLDER: PLUGINS_LINK,
         }
 
         return await self.async_step_menu(user_input)

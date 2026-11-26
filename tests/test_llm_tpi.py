@@ -1,0 +1,567 @@
+"""Boundary tests for TPI LLM tools, permissions, confirmation and readback."""
+
+from .tpi_runtime import native_runtime
+
+from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from homeassistant.core import Context
+from homeassistant.exceptions import HomeAssistantError
+
+from homeassistant.helpers import llm as ha_llm
+
+if not all(hasattr(ha_llm, name) for name in ("ToolAnnotations", "ToolResult")):
+    pytest.skip(
+        "Home Assistant LLM ToolAnnotations/ToolResult API is unavailable in this test environment",
+        allow_module_level=True,
+    )
+
+from custom_components.versatile_thermostat import llm as module
+from custom_components.versatile_thermostat.tpi_history import TPIHistory
+from custom_components.versatile_thermostat.tpi_identification import (
+    IdentificationError,
+)
+
+ENTITY = "climate.test"
+
+
+@pytest.fixture
+def setup_tools():
+    thermostat = SimpleNamespace(
+        proportional_function="tpi",
+        entry_infos={},
+        auto_tpi_manager=None,
+        tpi_coef_int=0.3,
+        tpi_coef_ext=0.02,
+    )
+
+    native_runtime(thermostat)
+
+    async def service(domain, name, data, **kwargs):
+        thermostat.tpi_coef_int = data.get("tpi_coef_int", thermostat.tpi_coef_int)
+        thermostat.tpi_coef_ext = data.get("tpi_coef_ext", thermostat.tpi_coef_ext)
+
+    user = SimpleNamespace(
+        is_admin=False,
+        permissions=SimpleNamespace(check_entity=Mock(return_value=True)),
+    )
+    hass = SimpleNamespace(
+        data={},
+        auth=SimpleNamespace(async_get_user=AsyncMock(return_value=user)),
+        services=SimpleNamespace(async_call=AsyncMock(side_effect=service)),
+    )
+    context = SimpleNamespace(
+        context=Context(user_id="user"), language="fr", assistant="conversation"
+    )
+    with patch.object(
+        module, "_get_vtherm_entity_ids", return_value=[ENTITY]
+    ), patch.object(module.TPIHistory, "get_thermostat", return_value=thermostat):
+        yield hass, thermostat, context
+
+
+async def call(setup, **args):
+    hass, _, context = setup
+    return await module.SetTPICoefficientsTool([ENTITY]).async_call(
+        hass, SimpleNamespace(tool_args={"entity_id": ENTITY, **args}), context
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [{"coef_int": 0.32}, {"coef_ext": 0.022}, {"coef_int": 0.32, "coef_ext": 0.022}],
+)
+async def test_direct_partial_or_both_and_service_context(setup_tools, args):
+    hass, _, context = setup_tools
+    result = await call(setup_tools, **args)
+    assert result.data["status"] == "success"
+    assert result.data["previous"] == {"coef_int": 0.3, "coef_ext": 0.02}
+    for key, value in args.items():
+        assert result.data["applied"][key] == value
+    hass.services.async_call.assert_awaited_once_with(
+        "versatile_thermostat",
+        "set_tpi_parameters",
+        {"entity_id": ENTITY, **{f"tpi_{k}": v for k, v in args.items()}},
+        blocking=True,
+        context=context.context,
+    )
+    assert result.data["stage_number"] == 3
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {},
+        {"coef_int": -1},
+        {"coef_int": 11},
+        {"coef_ext": 1.1},
+        {"coef_int": True},
+        {"coef_ext": "nan"},
+        {"coef_int": "inf"},
+        {"coef_int": "bad"},
+    ],
+)
+async def test_invalid_values_never_call_service(setup_tools, args):
+    result = await call(setup_tools, **args)
+    assert result.data["reason"] == "invalid_value"
+    setup_tools[0].services.async_call.assert_not_awaited()
+
+
+@pytest.mark.parametrize("authenticated,allowed", [(False, True), (True, False)])
+async def test_permissions(setup_tools, authenticated, allowed):
+    hass, _, context = setup_tools
+    if not authenticated:
+        context.context = Context()
+    else:
+        hass.auth.async_get_user.return_value.permissions.check_entity.return_value = (
+            allowed
+        )
+    result = await call(setup_tools, coef_int=0.32)
+    assert result.data["reason"] == "permission_denied"
+    hass.services.async_call.assert_not_awaited()
+
+
+async def test_large_change_requires_bound_confirmation(setup_tools):
+    hass, thermostat, _ = setup_tools
+    first = await call(
+        setup_tools, coef_int=0.62, coef_ext=0.047, confirm_large_change=True
+    )
+    assert first.data["confirmation_required"] is True
+    assert first.data["state_changed"] is False
+    hass.services.async_call.assert_not_awaited()
+    result = await call(
+        setup_tools,
+        coef_int=0.62,
+        coef_ext=0.047,
+        confirm_large_change=True,
+        confirmation_token=first.data["confirmation_token"],
+    )
+    assert result.data["applied"] == {"coef_int": 0.62, "coef_ext": 0.047}
+    assert result.data["state_changed"] is True
+    assert thermostat.tpi_coef_int == 0.62
+
+
+async def test_changed_request_cannot_reuse_confirmation(setup_tools):
+    first = await call(setup_tools, coef_int=0.62)
+    result = await call(
+        setup_tools,
+        coef_int=0.8,
+        confirm_large_change=True,
+        confirmation_token=first.data["confirmation_token"],
+    )
+    assert result.data["reason"] == "large_change_confirmation_required"
+    setup_tools[0].services.async_call.assert_not_awaited()
+
+
+async def test_current_values_changed_since_confirmation(setup_tools):
+    first = await call(setup_tools, coef_int=0.62)
+    setup_tools[1].tpi_coef_int = 0.31
+    result = await call(
+        setup_tools,
+        coef_int=0.62,
+        confirm_large_change=True,
+        confirmation_token=first.data["confirmation_token"],
+    )
+    assert result.data["reason"] == "large_change_confirmation_required"
+
+
+async def test_service_failure_unknown_application_and_locked_readback(setup_tools):
+    hass = setup_tools[0]
+    hass.services.async_call.side_effect = HomeAssistantError("failed")
+    result = await call(setup_tools, coef_int=0.32)
+    assert result.data["reason"] == "service_call_failed"
+    assert result.data["state_changed"] is None
+    hass.services.async_call.side_effect = (
+        None  # e.g. lock silently ignores the service
+    )
+    with patch.object(module.asyncio, "sleep", new=AsyncMock()):
+        result = await call(setup_tools, coef_int=0.32)
+    assert result.data["reason"] == "readback_failed"
+    assert result.data["applied"]["coef_int"] == 0.3
+
+
+async def test_idempotent_write(setup_tools):
+    result = await call(setup_tools, coef_int=0.3, coef_ext=0.02)
+    assert result.data["status"] == "success"
+    assert result.data["state_changed"] is False
+
+
+async def test_exposure_rechecked_at_call_time(setup_tools):
+    with patch.object(module, "_get_vtherm_entity_ids", return_value=[]):
+        result = await call(setup_tools, coef_int=0.32)
+    assert result.data["reason"] == "entity_not_exposed"
+    setup_tools[0].services.async_call.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "tool_class,stage",
+    [(module.CheckTPIOptimizationTool, 1), (module.AnalyzeTPICoefficientsTool, 2)],
+)
+async def test_read_tools_unsupported_type_explicit_and_no_service(
+    setup_tools, tool_class, stage
+):
+    hass, _, context = setup_tools
+    with patch.object(
+        module.TPIHistory,
+        "resolve_sources",
+        side_effect=IdentificationError("unsupported_thermostat_type"),
+    ):
+        result = await tool_class([ENTITY]).async_call(
+            hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+        )
+    assert result.data["reason"] == "unsupported_thermostat_type"
+    assert result.data["supported"] is False
+    assert "pas encore disponible" in result.data["message"]
+    assert result.data["stage_number"] == stage
+    assert tool_class.annotations.read_only is True
+    hass.services.async_call.assert_not_awaited()
+    assert module.SetTPICoefficientsTool.annotations.read_only is False
+
+
+async def test_recorder_query_bounded_to_fourteen_days():
+    sources = {
+        "temperature_source": "sensor.in",
+        "external_temperature_source": "sensor.out",
+        "heating_source": "switch.a",
+        "heating_sources": ["switch.a", "switch.b"],
+        "climate_source": ENTITY,
+        "window_source": None,
+        "safety_source": "binary_sensor.safety",
+        "power_source": None,
+    }
+    recorder = SimpleNamespace(async_add_executor_job=AsyncMock(return_value={}))
+    hass = SimpleNamespace(
+        config=SimpleNamespace(components={"recorder"}),
+        async_add_executor_job=AsyncMock(return_value=(None, {})),
+    )
+    with patch(
+        "custom_components.versatile_thermostat.tpi_history.get_instance",
+        return_value=recorder,
+    ):
+        await TPIHistory(hass, sources).async_load()
+    query = recorder.async_add_executor_job.call_args.args[0]
+    from custom_components.versatile_thermostat.recorder_export import (
+        read_recorder_history,
+    )
+
+    assert query.func is read_recorder_history
+    assert query.args[2] - query.args[1] == timedelta(days=14)
+    assert query.args[3] == [
+        "sensor.in",
+        "sensor.out",
+        "binary_sensor.safety",
+        ENTITY,
+        "switch.a",
+        "switch.b",
+    ]
+
+
+@pytest.mark.parametrize("over_switch", [False])
+def test_unsupported_before_non_tpi(over_switch):
+    with pytest.raises(IdentificationError, match="unsupported_thermostat_type"):
+        TPIHistory.resolve_sources(None, SimpleNamespace(is_over_switch=over_switch))
+
+
+async def test_confirmation_expired(setup_tools):
+    first = await call(setup_tools, coef_int=0.62)
+    pending = setup_tools[0].data[module.TPI_TOOL_DATA]["confirmations"][
+        ("user", ENTITY)
+    ]
+    pending["expires"] = 0
+    result = await call(
+        setup_tools,
+        coef_int=0.62,
+        confirm_large_change=True,
+        confirmation_token=first.data["confirmation_token"],
+    )
+    assert result.data["reason"] == "large_change_confirmation_required"
+    setup_tools[0].services.async_call.assert_not_awaited()
+
+
+async def test_check_does_not_fit_or_bootstrap(setup_tools):
+    hass, _, context = setup_tools
+    with patch.object(
+        module.TPIHistory, "resolve_sources", return_value={}
+    ), patch.object(
+        module.TPIHistory,
+        "async_load",
+        new=AsyncMock(
+            return_value=(
+                None,
+                {"history_available_days": 10, "history_usable_days": 9},
+            )
+        ),
+    ), patch.object(
+        module.TPIIdentification, "analyze"
+    ) as analysis:
+        result = await module.CheckTPIOptimizationTool([ENTITY]).async_call(
+            hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+        )
+    assert result.data["eligible"] is True
+    assert result.data["state_changed"] is False
+    analysis.assert_not_called()
+    hass.services.async_call.assert_not_awaited()
+
+
+async def test_direct_write_rejects_auto_tpi_without_history(setup_tools):
+    setup_tools[1].auto_tpi_manager.state.autolearn_enabled = True
+    result = await call(setup_tools, coef_int=0.32)
+    assert result.data["reason"] == "not_classic_tpi"
+    setup_tools[0].services.async_call.assert_not_awaited()
+
+
+async def test_successful_analysis_only_returns_proposal(setup_tools):
+    hass, _, context = setup_tools
+    hass.async_add_executor_job = AsyncMock(
+        return_value={
+            "status": "success",
+            "proposed": {"coef_int": 0.35, "coef_ext": 0.025, "closed_loop_hours": 6},
+            "warnings": [],
+        }
+    )
+    with patch.object(
+        module.TPIHistory, "resolve_sources", return_value={"primary_resolution": 10}
+    ), patch.object(
+        module.TPIHistory,
+        "async_load",
+        new=AsyncMock(
+            return_value=(
+                object(),
+                {"history_available_days": 10, "history_usable_days": 9},
+            )
+        ),
+    ):
+        result = await module.AnalyzeTPICoefficientsTool([ENTITY]).async_call(
+            hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+        )
+    assert result.data["proposed"]["coef_int"] == 0.35
+    assert result.data["state_changed"] is False
+    assert result.data["comparison"]["coef_int"]["previous"] == 0.3
+    hass.services.async_call.assert_not_awaited()
+
+
+async def test_recorder_missing_explicit_refusal():
+    hass = SimpleNamespace(config=SimpleNamespace(components=set()))
+    with pytest.raises(IdentificationError, match="recorder_unavailable"):
+        await TPIHistory(hass, {}).async_load()
+
+
+@pytest.mark.parametrize(
+    "kind", ["physical_switches", "valve_open_percent_command_proxy"]
+)
+@pytest.mark.parametrize(
+    "tool_class", [module.CheckTPIOptimizationTool, module.AnalyzeTPICoefficientsTool]
+)
+async def test_experimental_warning_required_before_application(
+    setup_tools, kind, tool_class
+):
+    hass, _, context = setup_tools
+    hass.async_add_executor_job = AsyncMock(
+        return_value={
+            "status": "success",
+            "proposed": {"coef_int": 0.35, "coef_ext": 0.025},
+            "warnings": [],
+        }
+    )
+    with patch.object(
+        TPIHistory,
+        "resolve_sources",
+        return_value={
+            "primary_resolution": 10,
+            "heating_source_kind": kind,
+        },
+    ), patch.object(
+        TPIHistory,
+        "async_load",
+        new=AsyncMock(
+            return_value=(
+                object(),
+                {"history_available_days": 10, "history_usable_days": 9},
+            )
+        ),
+    ):
+        result = await tool_class([ENTITY]).async_call(
+            hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+        )
+    assert result.data["experimental"] is True
+    assert result.data["verification_required_before_application"] is True
+    assert result.data["recommendation_reliable"] is False
+    assert "expérimental" in result.data["experimental_notice"]["fr"]
+    assert "before" in result.data["experimental_notice"]["en"]
+    if kind == "valve_open_percent_command_proxy":
+        assert "valve_command_is_not_measured_heat" in result.data["warnings"]
+    assert (
+        "experimental_coefficients_verify_before_application" in result.data["warnings"]
+    )
+    assert result.data["state_changed"] is False
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "tool_class", [module.CheckTPIOptimizationTool, module.AnalyzeTPICoefficientsTool]
+)
+@pytest.mark.parametrize("access", ["anonymous", "missing_user", "denied"])
+async def test_tpi_read_permission_before_history(setup_tools, tool_class, access):
+    hass, _, context = setup_tools
+    if access == "anonymous":
+        context.context = Context()
+    elif access == "missing_user":
+        hass.auth.async_get_user.return_value = None
+    else:
+        hass.auth.async_get_user.return_value.permissions.check_entity.return_value = (
+            False
+        )
+    with patch.object(TPIHistory, "from_thermostat") as history:
+        result = await tool_class([ENTITY]).async_call(
+            hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+        )
+    assert result.data["reason"] == "read_permission_denied"
+    assert result.data["state_changed"] is False
+    history.assert_not_called()
+    hass.services.async_call.assert_not_awaited()
+
+
+async def test_failed_valve_fit_preserves_warning_and_returns_no_pair(setup_tools):
+    hass, _, context = setup_tools
+    hass.async_add_executor_job = AsyncMock(
+        return_value={"reason": "ill_conditioned_model"}
+    )
+    with patch.object(
+        TPIHistory,
+        "resolve_sources",
+        return_value={
+            "primary_resolution": 10,
+            "heating_source_kind": "valve_open_percent_command_proxy",
+        },
+    ), patch.object(
+        TPIHistory,
+        "async_load",
+        new=AsyncMock(
+            return_value=(
+                object(),
+                {"history_available_days": 10, "history_usable_days": 9},
+            )
+        ),
+    ):
+        result = await module.AnalyzeTPICoefficientsTool([ENTITY]).async_call(
+            hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+        )
+    assert result.error
+    assert "proposed" not in result.data
+    assert result.data["experimental"] is True
+    assert "valve_command_is_not_measured_heat" in result.data["warnings"]
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "mode", ["classic", "learning", "continuous", "smartpi", "missing"]
+)
+async def test_check_analysis_share_effective_regulation_rule(setup_tools, mode):
+    hass, thermostat, context = setup_tools
+    thermostat.is_over_switch = True
+    thermostat.is_initialized = True
+    thermostat.temperature_unit = "°C"
+    thermostat.ext_temp_sensor_entity_id = "sensor.outside"
+    thermostat.cycle_min = 5
+    thermostat.entity_id = ENTITY
+    thermostat.entry_infos = {
+        "temperature_sensor_entity_id": "sensor.inside",
+        "underlying_entity_ids": ["switch.heater"],
+        "auto_tpi_mode": True,
+        "auto_tpi_continuous_kext": True,
+    }
+    from custom_components.versatile_thermostat.const import CONF_UNDERLYING_LIST
+
+    thermostat.entry_infos[CONF_UNDERLYING_LIST] = ["switch.heater"]
+    if mode == "learning":
+        thermostat.auto_tpi_manager.state.autolearn_enabled = True
+    elif mode == "continuous":
+        thermostat.auto_tpi_manager._continuous_kext = True
+    elif mode == "smartpi":
+        thermostat.proportional_function = "smartpi"
+    elif mode == "missing":
+        thermostat._algo_handler = None
+    entries = [
+        SimpleNamespace(
+            domain="binary_sensor",
+            platform="versatile_thermostat",
+            translation_key="safety_state",
+            entity_id="binary_sensor.safety",
+        )
+    ]
+    hass.async_add_executor_job = AsyncMock(
+        return_value={
+            "proposed": {"coef_int": 1.2, "coef_ext": 0.001},
+            "warnings": ["weak_heater_excitation"],
+        }
+    )
+    with patch(
+        "custom_components.versatile_thermostat.tpi_history.er.async_get",
+        return_value=Mock(),
+    ), patch(
+        "custom_components.versatile_thermostat.tpi_history.er.async_entries_for_config_entry",
+        return_value=entries,
+    ), patch.object(
+        TPIHistory,
+        "async_load",
+        new=AsyncMock(
+            return_value=(
+                object(),
+                {"history_available_days": 10, "history_usable_days": 9},
+            )
+        ),
+    ) as load:
+        results = [
+            await cls([ENTITY]).async_call(
+                hass, SimpleNamespace(tool_args={"entity_id": ENTITY}), context
+            )
+            for cls in (
+                module.CheckTPIOptimizationTool,
+                module.AnalyzeTPICoefficientsTool,
+            )
+        ]
+    assert results[0].data["regulation"] == results[1].data["regulation"]
+    if mode in ("classic", "learning", "continuous"):
+        assert results[0].data["eligible"] is True
+        assert results[1].data["comparison"]["coef_ext"][
+            "percent_delta"
+        ] == pytest.approx(-95)
+        assert "large_proposed_coefficient_change" in results[1].data["warnings"]
+        assert results[1].data["assessment"]["coherence"] == (
+            "requires_verification"
+            if mode == "classic"
+            else "model_assumptions_not_met"
+        )
+        if mode != "classic":
+            assert (
+                "adaptive_tpi_fixed_coefficient_assumption_not_met"
+                in results[1].data["warnings"]
+            )
+    else:
+        assert (
+            results[0].data["reason"] == results[1].data["reason"] == "not_classic_tpi"
+        )
+        load.assert_not_awaited()
+        assert "proposed" not in results[1].data
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "before,after,percent,large",
+    [
+        (0, 0, None, False),
+        (0, 0.001, None, True),
+        (0.02, 0.021, 5, False),
+        (0.02, 0.01, -50, True),
+        (0.02, 0.04, 100, True),
+    ],
+)
+def test_percentage_change_warning_boundaries(before, after, percent, large):
+    result = module._tpi_comparison({"coef_ext": before}, {"coef_ext": after})[
+        "coef_ext"
+    ]
+    assert result["percent_delta"] == (
+        pytest.approx(percent) if percent is not None else None
+    )
+    assert result["large_change"] is large

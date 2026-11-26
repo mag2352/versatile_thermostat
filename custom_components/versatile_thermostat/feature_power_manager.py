@@ -2,7 +2,6 @@
 
 # pylint: disable=line-too-long
 
-import logging
 from typing import Any
 
 from homeassistant.const import (
@@ -10,20 +9,22 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfEnergy,
 )
 
 from homeassistant.core import (
     HomeAssistant,
 )
 
+from vtherm_api.log_collector import get_vtherm_logger
 from .const import *  # pylint: disable=wildcard-import, unused-wildcard-import
 from .commons import write_event_log, round_to_nearest
 from .commons_type import ConfigData
 
 from .base_manager import BaseFeatureManager
-from .vtherm_api import VersatileThermostatAPI
+from .vtherm_central_api import VersatileThermostatAPI
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 
 class FeaturePowerManager(BaseFeatureManager):
@@ -31,13 +32,8 @@ class FeaturePowerManager(BaseFeatureManager):
 
     unrecorded_attributes = frozenset(
         {
-            "power_sensor_entity_id",
-            "max_power_sensor_entity_id",
             "is_power_configured",
-            "device_power",
-            "power_temp",
-            "current_power",
-            "current_max_power",
+            "power_manager",
         }
     )
 
@@ -48,6 +44,7 @@ class FeaturePowerManager(BaseFeatureManager):
         self._overpowering_state: str | None = None
         self._is_configured: bool = False
         self._device_power: float = 0
+        self._power_unit: str = POWER_UNIT_WATT
         self._use_power_feature: bool = False
 
     @overrides
@@ -57,7 +54,20 @@ class FeaturePowerManager(BaseFeatureManager):
         # Power management
         self._power_temp = entry_infos.get(CONF_PRESET_POWER)
 
-        self._device_power = entry_infos.get(CONF_DEVICE_POWER) or 0
+        configured_power_unit = to_internal_power_unit(entry_infos.get(CONF_POWER_UNIT))
+        if configured_power_unit not in (POWER_UNIT_WATT, POWER_UNIT_KILO_WATT):
+            _LOGGER.warning(
+                "%s - Unsupported power unit %s. Falling back to W",
+                self,
+                entry_infos.get(CONF_POWER_UNIT),
+            )
+            self._power_unit = POWER_UNIT_WATT
+        else:
+            self._power_unit = configured_power_unit
+
+        # Normalize device_power to internal Watts based on configured unit
+        raw_device_power = entry_infos.get(CONF_DEVICE_POWER)
+        self._device_power = (power_to_watts(raw_device_power, self._power_unit) or 0.0) if raw_device_power else 0.0
         self._use_power_feature = entry_infos.get(CONF_USE_POWER_FEATURE, False)
         self._is_configured = False
 
@@ -97,31 +107,43 @@ class FeaturePowerManager(BaseFeatureManager):
             }
         )
         if self._is_configured:
+            central = vtherm_api.central_power_manager
+            power_unit = self.power_unit
+            central_power_unit = central.power_unit
             extra_state_attributes.update(
                 {
                     "power_manager": {
-                        "power_sensor_entity_id": vtherm_api.central_power_manager.power_sensor_entity_id,
-                        "max_power_sensor_entity_id": vtherm_api.central_power_manager.max_power_sensor_entity_id,
+                        "power_sensor_entity_id": central.power_sensor_entity_id,
+                        "max_power_sensor_entity_id": central.max_power_sensor_entity_id,
                         "overpowering_state": self.overpowering_state,
-                        "device_power": self._device_power,
+                        "device_power": self.from_watts(self._device_power, power_unit),
                         "power_temp": self._power_temp,
-                        "current_power": vtherm_api.central_power_manager.current_power,
-                        "current_max_power": vtherm_api.central_power_manager.current_max_power,
-                        "mean_cycle_power": self.mean_cycle_power,
+                        "current_power": central.from_watts(central.current_power, central_power_unit),
+                        "current_max_power": central.from_watts(central.current_max_power, central_power_unit),
+                        "mean_cycle_power": self.from_watts(self.mean_cycle_power, power_unit),
+                        "power_unit": power_unit,
+                        "energy_unit": self.energy_unit,
+                        "central_power_unit": central_power_unit,
                     }
                 }
             )
         else:
+            power_unit = self.power_unit
             extra_state_attributes.update(
                 {
                     "power_manager": {
-                        "device_power": self._device_power,
-                        "mean_cycle_power": self.mean_cycle_power,
+                        "device_power": self.from_watts(self._device_power, power_unit),
+                        "mean_cycle_power": self.from_watts(self.mean_cycle_power, power_unit),
+                        "power_unit": power_unit,
+                        "energy_unit": self.energy_unit,
                     }
                 }
             )
 
-    async def check_power_available(self) -> bool:
+    async def check_power_available(
+        self,
+        reservation_key: str | None = None,
+    ) -> tuple[bool, float]:
         """Check if the Vtherm can be started considering overpowering.
         Returns True if no overpowering conditions are found.
         If True the vtherm power is written into the temporay vtherm started
@@ -134,9 +156,13 @@ class FeaturePowerManager(BaseFeatureManager):
         ):
             return True, 0
 
+        effective_reservation_key = reservation_key or self._default_power_reservation_key
+        startup_power = self.calculate_underlying_startup_power(reservation_key)
+
         current_power = vtherm_api.central_power_manager.current_power
         current_max_power = vtherm_api.central_power_manager.current_max_power
         started_vtherm_total_power = vtherm_api.central_power_manager.started_vtherm_total_power
+        current_started_power = vtherm_api.central_power_manager.get_started_vtherm_power(effective_reservation_key)
         if (
             current_power is None
             or current_max_power is None
@@ -155,20 +181,67 @@ class FeaturePowerManager(BaseFeatureManager):
             self._device_power,
         )
 
-        power_consumption_max = self.calculate_power_consumption_max()
-
-        ret = (current_power + started_vtherm_total_power + power_consumption_max) < current_max_power
+        ret = (
+            current_power
+            + started_vtherm_total_power
+            - current_started_power
+            + startup_power
+        ) < current_max_power
         if not ret:
             _LOGGER.info(
-                "%s - there is not enough power available power=%.3f, max_power=%.3f started_power=%.3f heater power=%.3f",
+                "%s - there is not enough power available power=%.3f, max_power=%.3f started_power=%.3f current_started_power=%.3f startup_power=%.3f heater power=%.3f reservation_key=%s",
                 self,
                 current_power,
                 current_max_power,
                 started_vtherm_total_power,
+                current_started_power,
+                startup_power,
                 self._device_power,
+                effective_reservation_key,
             )
 
-        return ret, power_consumption_max
+        return ret, startup_power
+
+    def calculate_underlying_startup_power(self, reservation_key: str | None = None) -> float:
+        """Calculate the incremental startup power for a single underlying.
+
+        This is the power to *reserve* between two power sensor measurements
+        when a new underlying is about to be turned on. It is deliberately
+        distinct from ``calculate_power_consumption_max()`` (used for global
+        shedding decisions) and intentionally ignores ``on_percent``: startup
+        is an instantaneous decision, not a cycle-average one.
+        """
+        if not self._device_power:
+            return 0
+
+        underlying_entities = getattr(self._vtherm, "underlying_entities", None)
+        if reservation_key is not None and isinstance(underlying_entities, list):
+            underlying = next(
+                (entity for entity in underlying_entities if entity.entity_id == reservation_key),
+                None,
+            )
+            if underlying is not None:
+                if underlying.is_device_active is True:
+                    return 0
+                if self._vtherm.is_over_climate or self._vtherm.nb_underlying_entities <= 1:
+                    return self._device_power
+                return self._device_power / self._vtherm.nb_underlying_entities
+
+        # over_climate and mono-underlying over_switch: if the device is
+        # already active, its load is already reflected in current_power, so
+        # no additional reservation is needed (returning device_power here
+        # would double-count the load between two sensor refreshes).
+        if self._vtherm.is_over_climate:
+            return 0 if self._vtherm.is_device_active else self._device_power
+
+        if self._vtherm.nb_underlying_entities <= 1:
+            return 0 if self._vtherm.is_device_active else self._device_power
+
+        # Multi-underlying over_switch: each underlying contributes an
+        # independent incremental slice, regardless of whether the VTherm is
+        # globally "active". Starting a 2nd underlying while the 1st is on
+        # must still reserve its own device_power/n slice.
+        return self._device_power / self._vtherm.nb_underlying_entities
 
     def calculate_power_consumption_max(self) -> float:
         """Calculate the maximum power consumption"""
@@ -177,7 +250,8 @@ class FeaturePowerManager(BaseFeatureManager):
             if self._vtherm.is_over_climate:
                 power_consumption_max = self._device_power
             else:
-                on_percent = self._vtherm.safe_on_percent
+                # if on_percent is not defined, we consider that the device can consume all its power in the worst case
+                on_percent = self._vtherm.safe_on_percent if self._vtherm.safe_on_percent is not None else 1
 
                 power_consumption_max = max(
                     self._device_power / self._vtherm.nb_underlying_entities,
@@ -185,7 +259,10 @@ class FeaturePowerManager(BaseFeatureManager):
                 )
         return power_consumption_max
 
-    def add_power_consumption_to_central_power_manager(self):
+    def add_power_consumption_to_central_power_manager(
+        self,
+        reservation_key: str | None = None,
+    ):
         """
         Add the current power consumption to the central power manager.
         """
@@ -193,11 +270,18 @@ class FeaturePowerManager(BaseFeatureManager):
         if not self._is_configured or not vtherm_api.central_power_manager.is_configured:
             return
 
-        power_consumption_max = self.calculate_power_consumption_max()
+        startup_power = self.calculate_underlying_startup_power(reservation_key)
 
-        vtherm_api.central_power_manager.add_started_vtherm_total_power(power_consumption_max)
+        if startup_power > 0:
+            vtherm_api.central_power_manager.set_started_vtherm_power(
+                reservation_key or self._default_power_reservation_key,
+                startup_power,
+            )
 
-    def sub_power_consumption_to_central_power_manager(self):
+    def sub_power_consumption_to_central_power_manager(
+        self,
+        reservation_key: str | None = None,
+    ):
         """
         Substract the current power consumption to the central power manager.
         """
@@ -205,19 +289,10 @@ class FeaturePowerManager(BaseFeatureManager):
         if not self._is_configured or not vtherm_api.central_power_manager.is_configured:
             return
 
-        power_consumption_max = 0
-        if self._vtherm.is_device_active:
-            if self._vtherm.is_over_climate:
-                power_consumption_max = self._device_power
-            else:
-                on_percent = self._vtherm.safe_on_percent
-
-                power_consumption_max = max(
-                    self._device_power / self._vtherm.nb_underlying_entities,
-                    self._device_power * on_percent,
-                )
-
-        vtherm_api.central_power_manager.add_started_vtherm_total_power(-power_consumption_max)
+        vtherm_api.central_power_manager.set_started_vtherm_power(
+            reservation_key or self._default_power_reservation_key,
+            0,
+        )
 
     async def set_overpowering(self, overpowering: bool, power_consumption_max: float = 0):
         """Force the overpowering state for the VTherm"""
@@ -285,14 +360,30 @@ class FeaturePowerManager(BaseFeatureManager):
         return self._overpowering_state == STATE_ON
 
     @property
+    def is_detected(self) -> bool:
+        """Return the overall state of the feature manager based on detection states"""
+        return self.is_overpowering_detected
+
+    @property
     def power_temperature(self) -> float | None:
         """Return the power temperature"""
         return self._power_temp
 
     @property
     def device_power(self) -> float:
-        """Return the device power"""
+        """Return the device power (normalized in Watts)"""
+
         return self._device_power
+
+    @property
+    def power_unit(self) -> str:
+        """Return the configured power unit of the VTherm ("W" or "kW")"""
+        return to_legal_power_unit(self._power_unit)
+
+    @property
+    def energy_unit(self) -> str:
+        """Return the energy unit matching the configured power unit"""
+        return UnitOfEnergy.WATT_HOUR if self._power_unit == POWER_UNIT_WATT else UnitOfEnergy.KILO_WATT_HOUR
 
     @property
     def mean_cycle_power(self) -> float | None:
@@ -300,7 +391,29 @@ class FeaturePowerManager(BaseFeatureManager):
         if not self._device_power:
             return None
 
-        return float(round_to_nearest(self._device_power * self._vtherm.safe_on_percent, 0.1))
+        if self._vtherm.proportional_algorithm:
+            algo_on_percent = self._vtherm.proportional_algorithm.on_percent
+            if algo_on_percent is None:
+                return None
+            return float(round_to_nearest(self._device_power * algo_on_percent, 0.01))
+
+        if self._vtherm.is_over_climate:
+            return self._device_power if self._vtherm.is_device_active else 0.0
+
+        return None
+
+    @property
+    def _default_power_reservation_key(self) -> str:
+        """Return a stable fallback key for temporary power reservations."""
+        return getattr(self._vtherm, "entity_id", None) or self._vtherm.name
+
+    def to_watts(self, power: float | None, unit: str | None) -> float | None:
+        """Convert a power value to Watts"""
+        return power_to_watts(power, unit)
+
+    def from_watts(self, power_w: float | None, target_unit: str | None) -> float | None:
+        """Convert a Watts value to the target power unit"""
+        return power_from_watts(power_w, target_unit)
 
     def __str__(self):
         return f"PowerManager-{self.name}"

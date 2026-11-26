@@ -13,9 +13,14 @@ jazycích: [Angličtina](README.md) | [Francouzština](README-fr.md) | [Němčin
 <img src="https://github.com/jmcollin78/versatile_thermostat/blob/main/images/icon.png" />
 </p>
 
-> ![Tip](images/tips.png) Tato termostatická integrace má za cíl výrazně zjednodušit vaše automatizace kolem správy vytápění. Protože všechny typické události kolem vytápění (nikdo doma?, detekována aktivita v místnosti?, otevřené okno?, omezení spotřeby energie?) jsou nativně spravovány termostatem, nemusíte se zabývat komplikovanými skripty a automatizacemi pro správu vašich termostatů. ;-).
+> ![Tip](images/tips.png) **Versatile Thermostat** je vysoce konfigurovatelný virtuální termostat, který transformuje jakékoli vytápěcí zařízení (radiátory, klimatizace, tepelná čerpadla atd.) v inteligentní a adaptivní systém. Umožňuje vám konsolidovat a centrálně řídit více různých topných systémů, přičemž automaticky optimalizuje spotřebu energie. Díky pokročilým algoritmům (TPI, auto-TPI) a možnostem učení se termostat přizpůsobuje vašemu domu 🏠 a vašim zvykům, poskytuje optimální pohodlí a významné snížení vašich topných účtů 💰.
+> Tato termostatická integrace má za cíl výrazně zjednodušit vaše automatizace kolem správy vytápění. Protože všechny typické události kolem vytápění (nikdo doma?, detekována aktivita v místnosti?, otevřené okno?, omezení spotřeby energie?) jsou nativně spravovány termostatem, nemusíte se zabývat komplikovanými skripty a automatizacemi pro správu vašich termostatů. 😉
 
 Tato vlastní komponenta pro Home Assistant je vylepšením a kompletním přepsáním komponenty "Awesome thermostat" (viz [Github](https://github.com/dadge/awesome_thermostat)) s přidanými funkcemi.
+
+# Asistent VTherm
+
+S diagnostikou či vysvětlením situace nebo vyhledáváním v dokumentaci vám pomůže [VTherm Assistant](https://www.versatile-thermostat.org/en/plugins/#jmcollin78/vtherm_assistant).
 
 # Snímky obrazovky
 
@@ -26,52 +31,56 @@ Versatile Thermostat UI Card (K dispozici na [Github](https://github.com/jmcolli
 # Co je nového?
 ![Nové](images/new-icon.png)
 
-## Release 8.3
-1. Addition of a configurable delay before activating the central boiler.
-2. Addition of a trigger for the central boiler when the total activated power exceeds a threshold. To make this feature work you must:
-   - Configure the power threshold that will trigger the boiler. This is a new entity available in the `central configuration` device.
-   - Configure the power values of the VTherms. This can be found on the first configuration page of each VTherm.
-   - Check the `Used by central boiler` box.
+## Verze 10.6.1
 
-Each time a VTherm is activated, its configured power is added to the total and, if the threshold is exceeded, the central boiler will be activated after the delay configured in item 1.
+Oproti verzi 10.5.1 přináší toto vydání následující novinky:
 
-The previous counter for the number of activated devices and its threshold still exist. To disable one of the thresholds (the power threshold or the activated-devices count threshold), set it to zero. As soon as either of the two non-zero thresholds is exceeded, the boiler is activated. Therefore a logical "or" is applied between the two thresholds.
+- **Inhibice pomocí pluginů**: kompatibilní pluginy mohou dočasně vyřadit _VTherm_ z řízení. Během této doby jsou příkazy podřízeným zařízením pozastaveny; po obnovení řízení termostat znovu použije svůj aktuální stav.
+- **Automatický návrat po ruční změně**: lze nastavit dobu, po které se obnoví preset aktivní před ruční změnou teploty. Pokud byl aktivní časově omezený preset, po ruční změně pokračuje až do svého původně nastaveného konce.
+- **Šablony pro příkazy centrálního kotle**: hodnotu příkazu lze vypočítat pomocí šablony Home Assistantu, která se vyhodnotí při každé aktivaci, deaktivaci nebo opakovaném povelu pro udržení chodu. Šablony se ověřují při konfiguraci.
 
-More informations [here](documentation/cs/feature-central-boiler.md).
+## Verze 10.5.0
 
-## Release 8.2
-> Added a feature to lock / unlock a VTherm with an optional code. More information [here](documentation/cs/feature-lock.md)
+Detekci poruchy vytápění lze nyní používat jako externí plugin
+`vtherm_heating_failure_detection`. Plugin nabízí centrální konfiguraci a
+vlastní nastavení pro jednotlivé VThermy; jeho formuláře předvyplní stávající
+nastavení core pro snazší migraci.
 
-## Release 8.1
-> - For `over_climate` with regulation by direct valve control, two new parameters are added to the existing `minimum_opening_degrees`. The parameters are now the following:
->    - `opening_threshold`: the valve opening value under which the valve should be considered as closed (and then 'max_closing_degree' will apply),
->    - `max_closing_degree`: the closing degree maximum value. The valve will never be closed above this value. Set it to 100 to fully close the valve when no heating is needed,
->    - `minimum_opening_degrees`: the opening degree minimum value for each underlying device when ``opening_threshold` is exceeded, comma separated. Default to 0. Example: 20, 25, 30. When the heating starts, the valve will start opening with this value and will continuously increase as long as more heating is needed.
->
-> ![alt text](images/opening-degree-graph.png)
-> More informations can be found the discussion thread about this here: https://github.com/jmcollin78/versatile_thermostat/issues/1220
+Během přechodného období mají nastavení pluginu přednost. Hodnoty, které nejsou
+v pluginu definované, nadále používají legacy konfiguraci core. Před aktivací
+pluginu vypněte legacy funkci pro daný VTherm, abyste předešli dvojí konfiguraci.
+
+Binární senzor poruchy vytápění nyní poskytuje plugin. Pokud to lze provést bez
+konfliktu, jeho stávající `entity_id` zůstane zachováno, aby dashboardy a
+automatizace fungovaly dál. Po vypnutí legacy senzoru znovu načtěte položku
+pluginu; pokud senzor zůstane aktivní, Home Assistant může vytvořit nové
+`entity_id`, které je nutné použít ve stávajících spotřebitelích.
+
+## Verze 10.4.0
+VTherm nyní může poskytovat `current_humidity` z externího senzoru vlhkosti pro všechny typy termostatů. Senzor lze vybrat v nabídce Vlhkost nebo jej automaticky najít na zařízení pokojového teploměru.
+
+Termostaty `over_valve` mají nyní stejné parametry řízení ventilu jako termostaty `over_climate` s regulací přímým řízením ventilu: `opening_threshold_degree`, `min_opening_degrees`, `max_closing_degree` a `max_opening_degrees`. Více informací: [řízení ventilu](documentation/cs/over-valve.md).
+
+Termostaty `over_valve` nyní podporují také režim spánku. Tento režim zobrazí VTherm jako vypnutý a odešle hrubý požadavek na otevření 100 %, aniž by vyžadoval vytápění z centrálního kotle. Nastavené limity řízení ventilu mohou omezit fyzické otevření. Více informací: [režim spánku](documentation/cs/over-valve.md#režim-spánku). Použití režimu spánku vyžaduje kartu kompatibilní s VTherm, například [Versatile Thermostat UI Card](https://github.com/jmcollin78/versatile-thermostat-ui-card), nebo akci `versatile_thermostat.set_hvac_mode_sleep`; výchozí karta climate Home Assistant není podporována.
+
+## Verze 10.3.0
+Nyní lze konfigurovat jednotky výkonu. Konfigurační obrazovky umožňují vybrat jednotku pro měření výkonu (výchozí je W). Jednotky vypočtené energie odpovídají nakonfigurované jednotce výkonu. Stávající položky jsou migrovány podle historické hodnoty výkonu zařízení: hodnoty vyšší než 100 se považují za W, ostatní za kW.
+
+⚠️ **Důležitá změna pro statistiky**
+Může se zobrazit oznámení o opravě, například: `Jednotka „Central configuration Total power active for boiler“ (sensor.total_power_active_for_boiler) byla změněna na „kW“`, nebo podobná zpráva v protokolu. Je to očekávané, protože jednotka dříve nebyla uvedena. Pro opravu statistik vyberte akci opravy `Aktualizovat jednotku dlouhodobých statistik`.
+
+## Verze 10.2.0
+Funkce **Auto Fan** je nyní dostupná jako externí plugin ([vtherm_auto_fan_extended](https://github.com/jmcollin78/vtherm_auto_fan_extended)). Původní (_legacy_) verze auto-fan je ve _VTherm_ stále dostupná, ale pro použití pluginu musí být v konfiguraci termostatu vypnuta. Kompletní dokumentace je k dispozici v [GitHub repozitáři pluginu](https://github.com/jmcollin78/vtherm_auto_fan_extended).
+
+## Verze 10.1
+Výběr režimu zastavení pro automatické spuštění/zastavení. Nová entita `select` umožňuje zvolit režim použitý, když funkce automatického spuštění/zastavení zjistí podmínku zastavení: `Vypnuto` (výchozí), `Pouze ventilátor` nebo `Vysoušení`. Režimy `Pouze ventilátor` a `Vysoušení` jsou nabízeny pouze tehdy, pokud je podřízené zařízení podporuje. Více informací [zde](documentation/cs/feature-auto-start-stop.md).
+
+Samo-regulace je nyní vypnuta, když _VTherm_ typu `over_climate` není v režimu `Topení` nebo `Chlazení`: podkladovému zařízení je odeslán původní (neregulovaný) setpoint. Více informací [zde](documentation/cs/self-regulation.md).
+
+## Verze 10.0
+Zavedení mechanismu pluginů. Umožňuje používat externí integrace jako pluginy pro _VTherm_. Seznam dostupných pluginů je na [webu Versatile Thermostat](https://www.versatile-thermostat.org/cs/plugins).
 
 
-## Release 8.0
-> Toto je hlavní vydání. Přepisuje významnou část interních mechanismů Versatile Thermostat zavedením několika nových funkcí:
->    1. _požadovaný stav / aktuální stav_: VTherm nyní má 2 stavy. Požadovaný stav je stav požadovaný uživatelem (nebo Plánovačem). Aktuální stav je stav aktuálně aplikovaný na VTherm. Ten závisí na různých funkcích VTherm. Například uživatel může požadovat (požadovaný stav) zapnuté vytápění s předvolbou Komfort, ale protože bylo detekováno otevřené okno, je VTherm ve skutečnosti vypnutý. Tento duální management vždy zachovává požadavek uživatele a aplikuje výsledek různých funkcí na tento požadavek uživatele pro získání aktuálního stavu. To lépe zpracovává případy, kdy více funkcí chce zasahovat do stavu VTherm (např. otevření okna a omezení spotřeby energie). Také zajišťuje návrat k původnímu požadavku uživatele, když již neprobíhá žádná detekce.
->    2. _časové filtrování_: operace časového filtrování byla přepracována. Časové filtrování brání odesílání příliš mnoha příkazů na ovládané zařízení, aby se zabránilo nadměrné spotřebě baterie (např. TRV na baterie), příliš časté změně cílových teplot (tepelné čerpadlo, peleťový kotel, podlahové vytápění...). Nová operace je nyní následující: explicitní požadavky uživatele (nebo Plánovače) jsou vždy okamžitě zohledněny. Nejsou filtrovány. Pouze změny související s vnějšími podmínkami (např. teplota v místnosti) mohou být potenciálně filtrovány. Filtrování spočívá v opětovném odeslání požadovaného příkazu později a ne v ignorování příkazu, jak tomu bylo dříve. Parametr `auto_regulation_dtemp` umožňuje nastavení zpoždění.
->    3. _zlepšení hvac_action_: `hvac_action` odráží aktuální stav aktivace ovládaného zařízení. Pro typ `over_switch` odráží stav aktivace spínače, pro `over_valve` nebo regulaci ventilu je aktivní, když je otevření ventilu větší než minimální otevření ventilu (nebo 0, pokud není nakonfigurováno), pro `over_climate` odráží `hvac_action` podkladového `climate`, pokud je dostupné, nebo simulaci jinak.
->    4. _vlastní atributy_: organizace vlastních atributů dostupných v Nástrojích pro vývojáře / Stavy byla přeorganizována do sekcí v závislosti na typu VTherm a každé aktivované funkci. Více informací [zde](documentation/en/reference.md#custom-attributes).
->    5. _omezení spotřeby energie_: algoritmus omezení spotřeby energie nyní bere v úvahu vypnutí zařízení mezi dvěma měřeními spotřeby energie domácnosti. Předpokládejme, že máte zpětnou vazbu o spotřebě energie každých 5 minut. Pokud se radiátor vypne mezi 2 měřeními, pak zapnutí nového může být autorizováno. Dříve byly mezi 2 měřeními brány v úvahu pouze zapnutí. Jak dříve, další zpětná vazba o spotřebě energie může omezit více nebo méně.
->    6. _auto-start/stop_: auto-start/stop je užitečné pouze pro typ VTherm `over_climate` bez přímého ovládání ventilu. Tato volba byla odstraněna pro ostatní typy VTherm.
->    7. _VTherm UI Card_: všechny tyto úpravy umožnily významný vývoj [VTherm UI Card](documentation/en/additions.md#versatile-thermostat-ui-card) pro integraci zpráv vysvětlujících aktuální stav (proč má můj VTherm tuto cílovou teplotu?) a zda probíhá časové filtrování - takže aktualizace podkladového stavu byla oddálena.
->    8. _zlepšení logů_: logy byly zlepšeny pro zjednodušení ladění. Logy ve formátu `--------------------> NEW EVENT: VersatileThermostat-Inversed ...` informují o události ovlivňující stav VTherm.
->
-> ⚠️ **Varování**
->
-> Toto hlavní vydání obsahuje změny způsobující nekompatibilitu s předchozí verzí:
-> - `versatile_thermostat_security_event` byl přejmenován na `versatile_thermostat_safety_event`. Pokud vaše automatizace používají tuto událost, musíte je aktualizovat,
-> - vlastní atributy byly přeorganizovány. Musíte aktualizovat své automatizace nebo Jinja šablony, které je používají,
-> - [VTherm UI Card](documentation/en/additions.md#versatile-thermostat-ui-card) musí být aktualizována na alespoň V2.0 pro kompatibilitu,
->
-> **Navzdory 342 automatickým testům této integrace a péči věnované tomuto hlavnímu vydání nemohu zaručit, že její instalace nenaruší stavy vašich VTherm. Pro každý VTherm musíte po instalaci zkontrolovat předvolbu, hvac_mode a případně cílovou teplotu VTherm.**
->
 
 # 🍻 Děkuji za piva 🍻
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/jmcollin78)
@@ -116,13 +125,17 @@ Dokumentace je nyní rozdělena do několika stránek pro snadnější čtení a
 15. [Centralizované řízení všech VTherm](documentation/cs/feature-central-mode.md)
 16. [Řízení ústředního vytápění](documentation/cs/feature-central-boiler.md)
 17. [Pokročilé aspekty, bezpečnostní režim](documentation/cs/feature-advanced.md)
-18. [Samoregulace](documentation/cs/self-regulation.md)
-19. [Příklady ladění](documentation/cs/tuning-examples.md)
-20. [Algoritmy](documentation/cs/algorithms.md)
-21. [Zámek / Odemknutí](documentation/cs/feature-lock.md)
-22. [Referenční dokumentace](documentation/cs/reference.md)
-23. [Řešení problémů](documentation/cs/troubleshooting.md)
-24. [Poznámky k verzím](documentation/cs/releases.md)
+18. [Detekce poruchy vytápění](documentation/cs/feature-heating-failure-detection.md)
+19. [Samoregulace](documentation/cs/self-regulation.md)
+20. [Auto TPI učení](documentation/cs/feature-autotpi.md)
+21. [Algoritmy](documentation/cs/algorithms.md)
+22. [Zamknutí / odemknutí](documentation/cs/feature-lock.md)
+23. [Synchronizace teploty](documentation/cs/feature-sync_device_temp.md)
+24. [Časovaný preset](documentation/cs/feature-timed-preset.md)
+25. [Referenční dokumentace](documentation/cs/reference.md)
+26. [Příklady ladění](documentation/cs/tuning-examples.md)
+27. [Řešení problémů](documentation/cs/troubleshooting.md)
+28. [Poznámky k verzím](documentation/cs/releases.md)
 
 # Některé výsledky
 
@@ -146,7 +159,7 @@ Dokumentace je nyní rozdělena do několika stránek pro snadnější čtení a
 
 ![image](documentation/en/images/results-over-climate-2.png)
 
-# Some comments on the integration
+# Některé komentáře k integraci
 |                                             |                                             |                                             |
 | ------------------------------------------- | ------------------------------------------- | ------------------------------------------- |
 | ![testimonial 1](images/testimonials-1.png) | ![testimonial 2](images/testimonials-2.png) | ![testimonial 3](images/testimonials-3.png) |
@@ -154,9 +167,9 @@ Dokumentace je nyní rozdělena do několika stránek pro snadnější čtení a
 
 Užijte si to!
 
-# ⭐ Star history
+# ⭐ Historie hvězdiček
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jmcollin78/versatile_thermostat&type=Date)](https://star-history.com/#jmcollin78/versatile_thermostat&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=jmcollin78/versatile_thermostat&type=Date)](https://star-history.dera.page/#jmcollin78/versatile_thermostat&Date)
 
 # Příspěvky jsou vítány!
 

@@ -2,18 +2,25 @@
 
 - [Documentation de référence](#documentation-de-référence)
   - [Synthèse des paramètres](#synthèse-des-paramètres)
-- [Capteurs](#capteurs)
-- [Actions (services)](#actions-services)
-  - [Forcer la présence/occupation](#forcer-la-présenceoccupation)
-  - [Modifier les paramètres de sécurité](#modifier-les-paramètres-de-sécurité)
-  - [ByPass Window Check](#bypass-window-check)
-  - [Services de verrouillage / déverrouillage](#services-de-verrouillage--déverrouillage)
-  - [Changer les paramètres du TPI](#changer-les-paramètres-du-tpi)
-- [Evènements](#evènements)
-- [Attributs personnalisés](#attributs-personnalisés)
-  - [Pour un _VTherm_](#pour-un-vtherm)
-  - [Pour la configuration centrale](#pour-la-configuration-centrale)
-- [Messages d'état](#messages-détat)
+  - [Configuration en mode Expert](#configuration-en-mode-expert)
+    - [Paramètres de l'auto-régulation en mode Expert](#paramètres-de-lauto-régulation-en-mode-expert)
+    - [Désactivation de la vérification du capteur extérieur en mode sécurité](#désactivation-de-la-vérification-du-capteur-extérieur-en-mode-sécurité)
+    - [Limite maximale de puissance de chauffe](#limite-maximale-de-puissance-de-chauffe)
+    - [Paramètres de détection automatique d'ouverture de fenêtre](#paramètres-de-détection-automatique-douverture-de-fenêtre)
+    - [Rétention des fichiers journaux (Log Buffer)](#rétention-des-fichiers-journaux-log-buffer)
+  - [Capteurs](#capteurs)
+  - [Actions (services)](#actions-services)
+    - [Forcer la présence/occupation](#forcer-la-présenceoccupation)
+    - [Modifier les paramètres de sécurité](#modifier-les-paramètres-de-sécurité)
+    - [ByPass Window Check](#bypass-window-check)
+    - [Services de verrouillage / déverrouillage](#services-de-verrouillage--déverrouillage)
+    - [Changer les paramètres du TPI](#changer-les-paramètres-du-tpi)
+    - [Preset temporisé (Timed Preset)](#preset-temporisé-timed-preset)
+  - [Evènements](#evènements)
+  - [Attributs personnalisés](#attributs-personnalisés)
+    - [Pour un _VTherm_](#pour-un-vtherm)
+    - [Pour la configuration centrale](#pour-la-configuration-centrale)
+  - [Messages d'état](#messages-détat)
 
 ## Synthèse des paramètres
 
@@ -67,6 +74,7 @@
 | ``minimal_activation_delay``              | Délai minimal d'activation                                                        | X             | -                   | -            | X                        |
 | ``safety_delay_min``                      | Délai maximal entre 2 mesures de températures                                     | X             | -                   | X            | X                        |
 | ``safety_min_on_percent``                 | Pourcentage minimal de puissance pour passer en mode sécurité                     | X             | -                   | X            | X                        |
+| ``manual_override_duration_min``          | Durée de dérogation manuelle avant retour au preset (minutes)                     | X             | X                   | X            | X                        |
 | ``auto_regulation_mode``                  | Le mode d'auto-régulation                                                         | -             | X                   | -            | -                        |
 | ``auto_regulation_dtemp``                 | La seuil d'auto-régulation                                                        | -             | X                   | -            | -                        |
 | ``auto_regulation_period_min``            | La période minimale d'auto-régulation                                             | -             | X                   | -            | -                        |
@@ -81,7 +89,151 @@
 | ``use_auto_start_stop_feature``           | Indique si la fonction de démarrage/extinction automatique est activée            | -             | X                   | -            | -                        |
 | ``auto_start_stop_level``                 | Le niveau de détection de l'auto start/stop                                       | -             | X                   | -            | -                        |
 
-# Capteurs
+## Configuration en mode Expert
+
+Versatile Thermostat permet de configurer des paramètres avancés directement dans le fichier `configuration.yaml`. Ces paramètres sont réservés aux utilisateurs avancés et donnent un contrôle fin sur le comportement du thermostat.
+
+### Paramètres de l'auto-régulation en mode Expert
+
+Lorsqu'un _VTherm_ de type `over_climate` utilise le mode **Expert** pour l'auto-régulation, vous pouvez déclarer les paramètres de régulation directement dans votre `configuration.yaml`. Cela vous permet d'affiner précisément le comportement de la régulation.
+
+Pour utiliser cette fonctionnalité, ajoutez les lignes suivantes dans votre `configuration.yaml` :
+
+```yaml
+versatile_thermostat:
+  auto_regulation_expert:
+    kp: 0.6
+    ki: 0.1
+    k_ext: 0.0
+    offset_max: 10
+    accumulated_error_threshold: 80
+    overheat_protection: true
+```
+
+Les paramètres sont les suivants :
+
+| Paramètre                     | Description                                                                                                                                | Type           | Exemple |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------- |
+| `kp`                          | Facteur proportionnel appliqué à l'erreur brute de température (différence entre la température cible et la température réelle)            | Nombre décimal | 0.6     |
+| `ki`                          | Facteur intégral appliqué à l'accumulation des erreurs au fil du temps                                                                     | Nombre décimal | 0.1     |
+| `k_ext`                       | Facteur appliqué à la différence entre la température intérieure et la température extérieure. Permet de compenser les variations externes | Nombre décimal | 0.0     |
+| `offset_max`                  | Correction maximale (offset) que la régulation peut appliquer à la consigne                                                                | Nombre décimal | 10      |
+| `accumulated_error_threshold` | Seuil maximum d'accumulation d'erreur. Évite une accumulation infinie de l'erreur                                                          | Nombre décimal | 80      |
+| `overheat_protection`         | Active la protection contre la surchauffe en limitant les corrections positives (optionnel)                                                | Booléen        | true    |
+
+> ![Important](images/tips.png) _*Remarque importante*_
+>
+> - Ces paramètres s'appliquent à **tous les _VTherms_ en mode Expert** du système. Il n'est pas possible d'avoir des configurations différentes pour différents thermostats.
+> - **Home Assistant doit être redémarré** pour que les changements prennent effet (ou vous pouvez recharger l'intégration Versatile Thermostat via les Outils de développement).
+> - Consultez la [documentation de l'auto-régulation](self-regulation.md#lauto-régulation-en-mode-expert) pour des exemples de configurations prédéfinies.
+
+### Désactivation de la vérification du capteur extérieur en mode sécurité
+
+Par défaut, le mode sécurité vérifie que le **capteur de température extérieur** envoie régulièrement des données. Cependant, si votre capteur extérieur est absent ou non critique pour votre installation, vous pouvez désactiver cette vérification.
+
+Pour cela, ajoutez les lignes suivantes dans votre `configuration.yaml` :
+
+```yaml
+versatile_thermostat:
+  safety_mode:
+    check_outdoor_sensor: false
+```
+
+| Paramètre              | Description                                                                                                                           | Type    | Défaut |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------ |
+| `check_outdoor_sensor` | Si `true`, le manque de données du capteur extérieur déclenchera le mode sécurité. Si `false`, seul le capteur intérieur sera vérifié | Booléen | true   |
+
+> ![Important](images/tips.png) _*Remarque importante*_
+>
+> - Cette modification s'applique à **tous les _VTherms_** du système
+> - Elle affecte la détection pour tous les thermostats en même temps
+> - **Home Assistant doit être redémarré** pour que les changements prennent effet
+
+### Limite maximale de puissance de chauffe
+
+Le paramètre `max_on_percent` permet de limiter globalement la puissance maximale de chauffage pour toute l'installation. Cela peut être utile pour respecter des contraintes électriques ou réguler la charge du système.
+
+Pour configurer cette limite, ajoutez la ligne suivante dans votre `configuration.yaml` :
+
+```yaml
+versatile_thermostat:
+  max_on_percent: 0.9
+```
+
+| Paramètre        | Description                                                                                               | Type           | Plage     | Défaut |
+| ---------------- | --------------------------------------------------------------------------------------------------------- | -------------- | --------- | ------ |
+| `max_on_percent` | Pourcentage maximal de puissance autorisé pour le chauffage. `1.0` = 100% de puissance, `0.9` = 90%, etc. | Nombre décimal | 0.0 à 1.0 | 1.0    |
+
+**Exemples d'utilisation** :
+- `0.8` : limite le chauffage à 80% de sa capacité
+- `0.5` : limite à 50% (utile en cas de surcharge électrique)
+- `1.0` : pas de limitation (comportement par défaut)
+
+> ![Important](images/tips.png) _*Remarque importante*_
+>
+> - Cette limitation s'applique à **tous les _VTherms_** du système
+> - Elle est appliquée immédiatement sans redémarrage
+> - Elle affecte la puissance maximale calculée à chaque cycle
+
+### Paramètres de détection automatique d'ouverture de fenêtre
+
+Lorsque vous utilisez la détection automatique d'ouverture de fenêtre (basée sur la chute de température), vous pouvez affiner les paramètres de lissage de la température pour améliorer la détection.
+
+Pour configurer ces paramètres, ajoutez les lignes suivantes dans votre `configuration.yaml` :
+
+```yaml
+versatile_thermostat:
+  short_ema_params:
+    max_alpha: 0.5
+    halflife_sec: 300
+    precision: 2
+```
+
+| Paramètre      | Description                                                                                                                                   | Type           | Plage     | Défaut |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------- | ------ |
+| `max_alpha`    | Facteur de lissage maximum (alpha) pour la moyenne mobile exponentielle. Contrôle la sensibilité aux changements rapides de température       | Nombre décimal | 0.0 à 1.0 | 0.5    |
+| `halflife_sec` | Durée de demi-vie en secondes pour le calcul de la moyenne mobile. Détermine la rapidité avec laquelle les anciennes valeurs perdent du poids | Nombre entier  | > 0       | 300    |
+| `precision`    | Nombre de chiffres après la virgule conservés dans le calcul de la moyenne mobile                                                             | Nombre entier  | > 0       | 2      |
+
+**Signification des paramètres** :
+- **`max_alpha`** : une valeur plus élevée rend la détection plus réactive aux changements brusques (détection plus rapide mais plus sensible aux faux positifs)
+- **`halflife_sec`** : une durée plus courte rend l'algorithme plus rapide pour oublier les anciennes valeurs (détection plus rapide)
+- **`precision`** : contrôle l'arrondi des calculs (rarement besoin de le modifier)
+
+> ![Attention](images/tips.png) _*Ces paramètres sont sensibles*_
+>
+> - Ces paramètres affectent la détection automatique d'ouverture de fenêtre
+> - Ils s'appliquent à **tous les _VTherms_** du système
+> - Ne les ajustez que si vous rencontrez des problèmes avec la détection (faux positifs ou non-détection)
+> - Consultez la [section dépannage](troubleshooting.md#ajuster-les-paramètres-de-détection-d'ouverture-de-fenêtre-en-mode-automatique) pour plus de détails
+
+### Rétention des fichiers journaux (Log Buffer)
+
+Versatile Thermostat conserve des logs internes pour le dépannage. Vous pouvez configurer la durée de rétention de ces logs.
+
+Pour configurer cette durée, ajoutez la ligne suivante dans votre `configuration.yaml` :
+
+```yaml
+versatile_thermostat:
+  log_buffer_max_age_hours: 24
+```
+
+| Paramètre                  | Description                                                                                               | Type          | Plage | Défaut |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- | ------------- | ----- | ------ |
+| `log_buffer_max_age_hours` | Durée maximale de conservation des logs en heures. Les logs plus anciens seront automatiquement supprimés | Nombre entier | > 0   | 24     |
+
+**Exemples d'utilisation** :
+- `12` : conserve les logs des 12 dernières heures
+- `24` : conserve les logs de 24 heures (1 jour)
+- `72` : conserve les logs de 72 heures (3 jours) pour un dépannage plus long
+
+> ![Important](images/tips.png) _*Gestion de la mémoire*_
+>
+> - Une durée plus longue consomme plus de mémoire
+> - Cette configuration affecte **tous les _VTherms_** du système
+> - Les logs sont utiles pour le dépannage via l'endpoint de téléchargement des logs
+
+## Capteurs
 
 Avec le thermostat sont disponibles des capteurs qui permettent de visualiser les alertes et l'état interne du thermostat. Ils sont disponibles dans les entités de l'appareil associé au thermostat :
 
@@ -124,11 +276,11 @@ et choisissez le thème ```versatile_thermostat_theme``` dans la configuration d
 
 ![image](images/colored-thermostat-sensors.png)
 
-# Actions (services)
+## Actions (services)
 
 Cette implémentation personnalisée offre des actions (ex service) spécifiques pour faciliter l'intégration avec d'autres composants Home Assistant.
 
-## Forcer la présence/occupation
+### Forcer la présence/occupation
 Ce service permet de forcer l'état de présence indépendamment du capteur de présence. Cela peut être utile si vous souhaitez gérer la présence via un service et non via un capteur. Par exemple, vous pouvez utiliser votre réveil pour forcer l'absence lorsqu'il est allumé.
 
 Le code pour appeler ce service est le suivant :
@@ -140,7 +292,7 @@ cible:
     entity_id : climate.my_thermostat
 ```
 
-## Modifier les paramètres de sécurité
+### Modifier les paramètres de sécurité
 Ce service permet de modifier dynamiquement les paramètres de sécurité décrits ici [Configuration avancée](#configuration-avancée).
 Si le thermostat est en mode ``security`` les nouveaux paramètres sont appliqués immédiatement.
 
@@ -155,7 +307,7 @@ target:
     entity_id : climate.my_thermostat
 ```
 
-## ByPass Window Check
+### ByPass Window Check
 Ce service permet d'activer ou non un bypass de la vérification des fenetres.
 Il permet de continuer à chauffer même si la fenetre est detectée ouverte.
 Mis à ``true`` les modifications de status de la fenetre n'auront plus d'effet sur le thermostat, remis à ``false`` cela s'assurera de désactiver le thermostat si la fenetre est toujours ouverte.
@@ -169,7 +321,7 @@ target:
     entity_id : climate.my_thermostat
 ```
 
-## Services de verrouillage / déverrouillage
+### Services de verrouillage / déverrouillage
 
 Ces services permettent de verrouiller un thermostat afin d'empêcher toute modification de sa configuration, ou de le déverrouiller pour rétablir les changements autorisés :
 
@@ -177,8 +329,8 @@ Ces services permettent de verrouiller un thermostat afin d'empêcher toute modi
 - `versatile_thermostat.unlock` - Déverrouille un thermostat pour autoriser à nouveau les modifications de configuration
 
 Voir [Fonction de verrouillage](feature-lock.md) pour plus de détails.
-## Changer les paramètres du TPI
-Tous les paramètres du TPI configurables [ici](images/config_tpi.png) sont modifiables par un service. Ces changements sont persistants et resistent à un redémarrage. Ils sont appliqués immédiatement et une mise à jour du thermostat est faite instantanément lorsque les paramètres sont changés.
+### Changer les paramètres du TPI
+Tous les paramètres du TPI configurables [ici](images/config-tpi.png) sont modifiables par un service. Ces changements sont persistants et resistent à un redémarrage. Ils sont appliqués immédiatement et une mise à jour du thermostat est faite instantanément lorsque les paramètres sont changés.
 
 Chaque paramètres est optionnel. Si il n'est pas fourni sa valeur courante est conservée.
 
@@ -196,7 +348,27 @@ target:
   entity_id: climate.sonoff_trvzb
 ```
 
-# Evènements
+### Preset temporisé (Timed Preset)
+Ces services permettent de forcer temporairement un preset sur un thermostat pour une durée déterminée. Voir [Preset Temporisé](feature-timed-preset.md) pour plus de détails.
+
+Pour activer un preset temporisé :
+```yaml
+service: versatile_thermostat.set_timed_preset
+data:
+  preset: "boost"
+  duration_minutes: 30
+target:
+  entity_id: climate.mon_thermostat
+```
+
+Pour annuler un preset temporisé avant la fin de sa durée :
+```yaml
+service: versatile_thermostat.cancel_timed_preset
+target:
+  entity_id: climate.mon_thermostat
+```
+
+## Evènements
 Les évènements marquant du thermostat sont notifiés par l'intermédiaire du bus de message.
 Les évènements notifiés sont les suivants:
 
@@ -207,6 +379,7 @@ Les évènements notifiés sont les suivants:
 - ``versatile_thermostat_preset_event`` : un nouveau preset est sélectionné sur le thermostat. Cet évènement est aussi diffusé au démarrage du thermostat
 - ``versatile_thermostat_central_boiler_event`` : un évènement indiquant un changement dans l'état de la chaudière.
 - ``versatile_thermostat_auto_start_stop_event`` : un évènement indiquant un arrêt ou une relance fait par la fonction d'auto-start/stop
+- ``versatile_thermostat_timed_preset_event`` : un évènement indiquant l'activation ou la désactivation d'un preset temporisé
 
 Si vous avez bien suivi, lorsqu'un thermostat passe en mode sécurité, 3 évènements sont déclenchés :
 1. ``versatile_thermostat_temperature_event`` pour indiquer qu'un thermomètre ne répond plus,
@@ -217,18 +390,18 @@ Chaque évènement porte les valeurs clés de l'évènement (températures, pres
 
 Vous pouvez très facilement capter ses évènements dans une automatisation par exemple pour notifier les utilisateurs.
 
-# Attributs personnalisés
+## Attributs personnalisés
 
 Pour régler l'algorithme, vous avez accès à tout le contexte vu et calculé par le thermostat via des attributs dédiés. Vous pouvez voir (et utiliser) ces attributs dans l'IHM "Outils de développement / états" de HA. Entrez votre thermostat et vous verrez quelque chose comme ceci :
 
 ![image](images/dev-tools-climate.png)
 
-## Pour un _VTherm_
+### Pour un _VTherm_
 Les attributs personnalisés sont les suivants :
 
 | Attribut                                        | Signification                                                                                                                                                                                                       |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ``hvac_modes``                                  | La liste des modes supportés par le thermostat                                                                                                                                                                      |
+| ``hvac_modes``                                  | La liste des modes supportés par le thermostat. Peut contenir `sleep`, sélectionnable uniquement via une carte compatible VTherm (comme la [VTherm UI Card](additions.md#versatile-thermostat-ui-card)) ou l'action `versatile_thermostat.set_hvac_mode_sleep` ; la carte climate standard de HA n'est pas supportée pour `sleep` |
 | ``temp_min``                                    | La température minimale                                                                                                                                                                                             |
 | ``temp_max``                                    | La température maximale                                                                                                                                                                                             |
 | ``target_temp_step``.                           | Le pas de température cible                                                                                                                                                                                         |
@@ -258,16 +431,18 @@ Les attributs personnalisés sont les suivants :
 | ``ext_current_temperature``                     | La température extérieure courante                                                                                                                                                                                  |
 | ``last_temperature_datetime``                   | La date et l'heure au format ISO8866 de la dernière réception de température interne                                                                                                                                |
 | ``last_ext_temperature_datetime``               | La date et l'heure au format ISO8866 de la dernière réception de température extérieure                                                                                                                             |
-| ``is_device_active``                            | true si le sous-jacent est actif                                                                                                                                                                                    |
+| ``should_device_be_active``                     | true si le sous-jacent est actif                                                                                                                                                                                    |
 | ``device_actives``                              | La liste des devices sous-jacents actuellement vus comme actifs                                                                                                                                                     |
 | ``nb_device_actives``                           | Le nombre de devices sous-jacents actuellement vus comme actifs                                                                                                                                                     |
 | ``ema_temp``                                    | La température courante moyenne. Calculée comme la moyenne mobile exponentielle des valeurs précédentes. Sert au calcul de `temperature_slope`                                                                      |
 | ``temperature_slope``                           | La pente de la température courante en °/heure                                                                                                                                                                      |
-| ``hvac_off_reason``                             | Indique la raison de l'arrêt (hvac_off) du VTherm. Ce peut être Window, Auto-start/stop ou Manuel                                                                                                                   |
+| ``hvac_off_reason``                             | Indique la raison de l'arrêt (hvac_off) du VTherm. Ce peut être Window, Auto-start/stop, Manuel ou Sommeil                                                                                                          |
+| ``hvac_mode_reason``                            | Indique la raison du mode courant (hvac_mode) du VTherm. Ce peut être Window, Auto-start/stop (précisé selon le mode d'arrêt : off, fan-only ou dry), Central mode, Safety, Manuel ou Sleep                         |
 | ``total_energy``                                | Une estimation de l'énergie totale consommée par ce VTherm                                                                                                                                                          |
 | ``last_change_time_from_vtherm``                | La date/heure du dernier changement fait par VTherm                                                                                                                                                                 |
 | ``messages``                                    | Une liste de messages expliquant le calcul de l'état courant. Cf. [messages d'état](#messages-détat)                                                                                                                |
-| ``is_sleeping``                                 | Indique le Vtherm est en mode sommeil (valable pour les VTherm de type `over_climate` avec contrôle direct de la vanne)                                                                                             |
+| ``unavailable_underlying_entities``             | La liste des entités sous-jacentes (climate, switch, vanne, nombres d'ouverture/fermeture...) `unavailable` ou `unknown` après le démarrage du VTherm. Vide si toutes sont disponibles                              |
+| ``is_sleeping``                                 | Indique le Vtherm est en mode sommeil (valable pour `over_climate` avec contrôle direct de la vanne et `over_valve`)                                                                                                |
 | ``is_recalculate_scheduled``                    | Indique que le recalcule de l'état du sous-jacent a été reporté par le filtrage temporel pour limiter le nombre d'interactions avec l'équipement contrôlé                                                           |
 | **SECTION `configuration`**                     | ------                                                                                                                                                                                                              |
 | ``ac_mode``                                     | true si l'équipement supporte le mode Refroidissement en plus du mode Chauffage                                                                                                                                     |
@@ -336,6 +511,16 @@ Les attributs personnalisés sont les suivants :
 | ``auto_start_stop_accumulated_error``           | La valeur de `accumulated_error` de l'algorithme de auto-start/stop                                                                                                                                                 |
 | ``auto_start_stop_accumulated_error_threshold`` | Le seuils de `accumulated_error` de l'algorithme de auto-start/stop                                                                                                                                                 |
 | ``auto_start_stop_last_switch_date``            | La date/heure du dernier switch fait par l'algorithme de auto-start/stop                                                                                                                                            |
+| ``auto_start_stop_stop_mode``                   | Le mode appliqué lors d'un arrêt automatique. Peut être `off`, `fan_only` ou `dry`                                                                                                                                  |
+| **SECTION `timed_preset_manager`**              | ------                                                                                                                                                                                                              |
+| ``is_active``                                   | `true` si un preset temporisé est actif, `false` sinon                                                                                                                                                              |
+| ``preset``                                      | Le nom du preset temporisé actif (ou `null` si aucun)                                                                                                                                                               |
+| ``original_preset``                             | Le preset restauré à la fin du preset temporisé (ou `null` si aucun)                                                                                                                                                |
+| ``end_time``                                    | La date/heure de fin du preset temporisé (format ISO, ou `null` si aucun)                                                                                                                                           |
+| ``remaining_time_min``                          | Le temps restant en minutes avant la fin du preset temporisé (entier)                                                                                                                                               |
+| ``is_manual_override``                          | `true` si le preset temporisé actif est une dérogation manuelle                                                                                                                                                     |
+| ``resume_preset``                               | Le preset temporisé interrompu par la dérogation manuelle, repris à sa fin (ou `null`)                                                                                                                              |
+| ``resume_end_time``                             | La date/heure de fin du preset temporisé interrompu (format ISO, ou `null`)                                                                                                                                         |
 | **SECTION `vtherm_over_switch`**                | ------ uniquement si `is_over_switch`                                                                                                                                                                               |
 | ``is_inversed``                                 | `true` si la commande est inversée (fil pilote avec diode)                                                                                                                                                          |
 | ``keep_alive_sec``                              | Le délai de keep-alive ou 0 si non configuré                                                                                                                                                                        |
@@ -391,9 +576,9 @@ Les attributs personnalisés sont les suivants :
 | ``auto_regulation_period_min``                  | La valeur du paramètre de filtrage temporel en minutes. Correspond à l'interval minimal entre 2 commandes de la vanne (hors changement de l'utilisateur).                                                           |
 | ``last_calculation_timestamp``                  | La date/heure du dernier envoi d'ouverture de la vanne                                                                                                                                                              |
 
-## Pour la configuration centrale
+### Pour la configuration centrale
 
-Les attributs personnalisés de la configuration centrale sont accessibles dans Outils de developpement / Etats sur l'entité `binary_sensor.central_boiler` :
+Les attributs personnalisés de la configuration centrale sont accessibles dans Outils de developpement / Etats sur l'entité `binary_sensor.central_configuration_central_boiler` :
 
 | Attribut                                    | Signification                                                                                    |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -458,7 +643,7 @@ friendly_name: Central boiler
 
 Ces attributs vous seront demandés lors d'une demande d'aide.
 
-# Messages d'état
+## Messages d'état
 
 L'attribut personnalisé `specific_states.messages` contient une liste de code messages qui explique l'état courant. Les messages peuvent être :
 | Code                                | Signification                                                                                |
@@ -472,5 +657,22 @@ L'attribut personnalisé `specific_states.messages` contient une liste de code m
 | `target_temp_activity_detected`     | La température cible a été forcée par la détection de mouvement                              |
 | `target_temp_activity_not_detected` | La température cible a été forcée par la non détection de mouvement                          |
 | `target_temp_absence_detected`      | La température cible a été forcée par la détection d'absence                                 |
+| `underlying_unavailable`            | Au moins un équipement sous-jacent est indisponible ou inconnu (cf. `unavailable_underlying_entities`)|
 
-Note : ces messages sont disponibles dans la [VTherm UI Card](documentation/fr/additions.md#versatile-thermostat-ui-card) sous l'icone d'information.
+Note : ces messages sont disponibles dans la [VTherm UI Card](additions.md#versatile-thermostat-ui-card) sous l'icone d'information.
+
+### `hvac_action` avec contrôle direct de la vanne
+
+Pour un VTherm `over_climate` avec contrôle direct de la vanne, `hvac_action` est calculé à partir de l'ouverture réelle de la vanne et de la dernière commande d'ouverture. Il ne dépend pas de l'action renvoyée par l'entité climate sous-jacente.
+
+| Condition du VTherm         | Condition de la vanne                                                                                 | `hvac_action` résultant | Remarques                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| Le mode interne est `SLEEP` | Toute ouverture physique, y compris 100 %                                                             | `off`                   | État forcé : la vanne peut rester ouverte sans demande de chauffage ni de chaudière centrale. |
+| Pas en `SLEEP`              | Au moins une vanne régulée a une ouverture réelle strictement supérieure à `100 - max_closing_degree` | `heating`               | La comparaison est stricte.                                                                   |
+| Pas en `SLEEP`              | Aucune vanne ne chauffe, mais au moins une vanne a une dernière commande d'ouverture positive         | `idle`                  | La vanne est commandée ouverte mais n'est pas considérée comme physiquement active.           |
+| Pas en `SLEEP`              | Toutes les vannes ont une dernière commande d'ouverture à `0`                                         | `off`                   | Aucune ouverture n'est en attente.                                                            |
+| Pas en `SLEEP`              | Toutes les vannes n'ont aucune commande d'ouverture précédente                                        | `off`                   | Cas typique au démarrage ou sans commande.                                                    |
+| Pas en `SLEEP`              | L'ouverture d'une vanne est égale à `100 - max_closing_degree`                                        | `idle`                  | L'égalité ne produit pas `heating` lorsqu'une commande positive reste présente.               |
+| Pas en `SLEEP`              | Plusieurs vannes, dont au moins une chauffe                                                           | `heating`               | `heating` est prioritaire.                                                                    |
+| Pas en `SLEEP`              | Plusieurs vannes, aucune ne chauffe, mais au moins une est inactive                                   | `idle`                  | Repli après `heating`.                                                                        |
+| Pas en `SLEEP`              | Plusieurs vannes, toutes sont arrêtées                                                                | `off`                   | Aucune vanne active ou en attente ne reste.                                                   |

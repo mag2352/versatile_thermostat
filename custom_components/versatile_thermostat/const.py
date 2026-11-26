@@ -8,6 +8,7 @@ from typing import Literal
 from datetime import datetime
 
 from enum import Enum
+from homeassistant.const import STATE_UNKNOWN, STATE_UNAVAILABLE, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_NAME, Platform
 
@@ -15,9 +16,11 @@ from homeassistant.components.climate.const import ClimateEntityFeature  # pylin
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .prop_algorithm import (
-    PROPORTIONAL_FUNCTION_TPI,
-)
+
+from vtherm_api.const import DOMAIN, VTHERM_API_NAME, DEVICE_MANUFACTURER, DEVICE_MODEL, get_tz, NowClass, EventType
+from vtherm_api.log_collector import get_vtherm_logger
+
+PROPORTIONAL_FUNCTION_TPI = "tpi"
 
 from .vtherm_preset import VThermPreset, VThermPresetWithAC, VThermPresetWithAway, VThermPresetWithACAway, PRESET_TEMP_SUFFIX, PRESET_AWAY_SUFFIX  # pylint: disable=unused-import
 from .vtherm_hvac_mode import (
@@ -35,10 +38,10 @@ from .vtherm_hvac_mode import (
 )  # pylint: disable=unused-import
 from .vtherm_state import VThermState  # pylint: disable=unused-import
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = get_vtherm_logger(__name__)
 
 CONFIG_VERSION = 2
-CONFIG_MINOR_VERSION = 1
+CONFIG_MINOR_VERSION = 4
 
 DEVICE_MANUFACTURER = "JMCOLLIN"
 DEVICE_MODEL = "Versatile Thermostat"
@@ -47,18 +50,21 @@ DOMAIN = "versatile_thermostat"
 
 # The order is important.
 PLATFORMS: list[Platform] = [
-    Platform.SELECT,
     Platform.CLIMATE,
     Platform.SENSOR,
     # Number should be after CLIMATE
     Platform.NUMBER,
     Platform.BINARY_SENSOR,
     Platform.SWITCH,
+    # Select should be after CLIMATE
+    Platform.SELECT,
 ]
 
 CONF_UNDERLYING_LIST = "underlying_entity_ids"
 CONF_HEATER_KEEP_ALIVE = "heater_keep_alive"
 CONF_TEMP_SENSOR = "temperature_sensor_entity_id"
+CONF_HUMIDITY_SENSOR = "humidity_sensor_entity_id"
+CONF_USE_HUMIDITY_FEATURE = "use_humidity_feature"
 CONF_LAST_SEEN_TEMP_SENSOR = "last_seen_temperature_sensor_entity_id"
 CONF_EXTERNAL_TEMP_SENSOR = "external_temperature_sensor_entity_id"
 CONF_POWER_SENSOR = "power_sensor_entity_id"
@@ -66,6 +72,21 @@ CONF_MAX_POWER_SENSOR = "max_power_sensor_entity_id"
 CONF_WINDOW_SENSOR = "window_sensor_entity_id"
 CONF_MOTION_SENSOR = "motion_sensor_entity_id"
 CONF_DEVICE_POWER = "device_power"
+CONF_POWER_UNIT = "power_unit"
+
+# Power unit values used by configuration selector translation keys.
+# Convert them to Home Assistant's "W" / "kW" values only at entity boundaries.
+POWER_UNIT_WATT = "w"
+POWER_UNIT_KILO_WATT = "kw"
+POWER_UNIT_MEGA_WATT = "mw"
+POWER_UNIT_AUTO = "auto"
+
+# Selector options
+CONF_POWER_UNITS = [POWER_UNIT_WATT, POWER_UNIT_KILO_WATT]
+CONF_CENTRAL_POWER_UNITS = [POWER_UNIT_WATT, POWER_UNIT_KILO_WATT, POWER_UNIT_AUTO]
+
+# Threshold used by the legacy unit heuristic and by the config migration
+THRESHOLD_POWER_WATT_KILO = 100
 CONF_CYCLE_MIN = "cycle_min"
 CONF_PROP_FUNCTION = "proportional_function"
 CONF_WINDOW_DELAY = "window_delay"
@@ -125,12 +146,29 @@ CONF_OFFSET_CALIBRATION_LIST = "offset_calibration_entity_ids"
 CONF_OPENING_DEGREE_LIST = "opening_degree_entity_ids"
 CONF_CLOSING_DEGREE_LIST = "closing_degree_entity_ids"
 CONF_MIN_OPENING_DEGREES = "min_opening_degrees"
+CONF_MAX_OPENING_DEGREES = "max_opening_degrees"
 CONF_MAX_CLOSING_DEGREE = "max_closing_degree"
 CONF_OPENING_THRESHOLD_DEGREE = "opening_threshold_degree"
+
+CONF_SYNC_DEVICE_INTERNAL_TEMP = "sync_device_internal_temp"
+CONF_SYNC_WITH_CALIBRATION = "sync_with_calibration"
+CONF_SYNC_ENTITY_LIST = "sync_entity_ids"
+
+CONF_USE_HEATING_FAILURE_DETECTION_FEATURE = "use_heating_failure_detection_feature"
+CONF_USE_HEATING_FAILURE_DETECTION_CENTRAL_CONFIG = "use_heating_failure_detection_central_config"
+CONF_HEATING_FAILURE_THRESHOLD = "heating_failure_threshold"
+CONF_COOLING_FAILURE_THRESHOLD = "cooling_failure_threshold"
+CONF_HEATING_FAILURE_DETECTION_DELAY = "heating_failure_detection_delay"
+CONF_TEMPERATURE_CHANGE_TOLERANCE = "temperature_change_tolerance"
+CONF_FAILURE_DETECTION_ENABLE_TEMPLATE = "failure_detection_enable_template"
 
 CONF_LOCK_CODE = "lock_code"
 CONF_LOCK_USERS = "lock_users"
 CONF_LOCK_AUTOMATIONS = "lock_automations"
+CONF_AUTO_RELOCK_SEC = "auto_relock_sec"
+
+CONF_REPAIR_INCORRECT_STATE = "repair_incorrect_state"
+CONF_MANUAL_OVERRIDE_DURATION_MIN = "manual_override_duration_min"
 
 CONF_VSWITCH_ON_CMD_LIST = "vswitch_on_command"
 CONF_VSWITCH_OFF_CMD_LIST = "vswitch_off_command"
@@ -150,10 +188,14 @@ CONF_VALVE_3 = "valve_entity3_id"
 CONF_VALVE_4 = "valve_entity4_id"
 
 CONF_AUTO_TPI_MODE = "auto_tpi_mode"
-CONF_AUTO_TPI_ENABLE_UPDATE_CONFIG = "auto_tpi_enable_update_config"
-CONF_AUTO_TPI_ENABLE_NOTIFICATION = "auto_tpi_enable_notification"
-CONF_AUTO_TPI_KEEP_EXT_LEARNING = "auto_tpi_keep_ext_learning"
-CONF_AUTO_TPI_CONTINUOUS_LEARNING = "auto_tpi_continuous_learning"
+CONF_AUTO_TPI_LEARNING_TYPE = "auto_tpi_learning_type"
+AUTO_TPI_LEARNING_TYPE_DISCOVERY = "discovery"
+AUTO_TPI_LEARNING_TYPE_FINE_TUNING = "fine_tuning"
+CONF_AUTO_TPI_LEARNING_TYPES = [
+    AUTO_TPI_LEARNING_TYPE_DISCOVERY,
+    AUTO_TPI_LEARNING_TYPE_FINE_TUNING,
+]
+CONF_AUTO_TPI_ENABLE_ADVANCED_SETTINGS = "auto_tpi_enable_advanced_settings"
 CONF_AUTO_TPI_HEATER_HEATING_TIME = "heater_heating_time"
 CONF_AUTO_TPI_HEATER_COOLING_TIME = "heater_cooling_time"
 CONF_AUTO_TPI_CALCULATION_METHOD = "auto_tpi_calculation_method"
@@ -162,16 +204,21 @@ AUTO_TPI_METHOD_EMA = "ema"
 CONF_AUTO_TPI_CALCULATION_METHODS = [AUTO_TPI_METHOD_AVG, AUTO_TPI_METHOD_EMA]
 CONF_AUTO_TPI_EMA_ALPHA = "auto_tpi_ema_alpha"
 CONF_AUTO_TPI_AVG_INITIAL_WEIGHT = "auto_tpi_avg_initial_weight"
-CONF_AUTO_TPI_MAX_COEF_INT = "auto_tpi_max_coef_int"
+
 CONF_AUTO_TPI_HEATING_POWER = "auto_tpi_heating_rate"
 CONF_AUTO_TPI_COOLING_POWER = "auto_tpi_cooling_rate"
+CONF_AUTO_TPI_AGGRESSIVENESS = "auto_tpi_aggressiveness"
+
 CONF_AUTO_TPI_EMA_DECAY_RATE = "auto_tpi_ema_decay_rate"
+CONF_AUTO_TPI_CONTINUOUS_KEXT = "auto_tpi_continuous_kext"
+CONF_AUTO_TPI_CONTINUOUS_KEXT_ALPHA = "auto_tpi_continuous_kext_alpha"
 
 
 # Global params into configuration.yaml
 CONF_SHORT_EMA_PARAMS = "short_ema_params"
 CONF_SAFETY_MODE = "safety_mode"
 CONF_MAX_ON_PERCENT = "max_on_percent"
+CONF_LOG_BUFFER_MAX_AGE_HOURS = "log_buffer_max_age_hours"
 
 CONF_USE_MAIN_CENTRAL_CONFIG = "use_main_central_config"
 CONF_USE_TPI_CENTRAL_CONFIG = "use_tpi_central_config"
@@ -188,6 +235,7 @@ CONF_USE_CENTRAL_MODE = "use_central_mode"
 CONF_CENTRAL_BOILER_ACTIVATION_SRV = "central_boiler_activation_service"
 CONF_CENTRAL_BOILER_DEACTIVATION_SRV = "central_boiler_deactivation_service"
 CONF_CENTRAL_BOILER_ACTIVATION_DELAY_SEC = "central_boiler_activation_delay_sec"
+CONF_KEEP_ALIVE_BOILER_DELAY_SEC = "keep_alive_boiler_delay_sec"
 
 CONF_USED_BY_CENTRAL_BOILER = "used_by_controls_central_boiler"
 CONF_WINDOW_ACTION = "window_action"
@@ -215,16 +263,54 @@ TYPE_AUTO_START_STOP_LEVELS = Literal[  # pylint: disable=invalid-name
     AUTO_START_STOP_LEVEL_NONE,
 ]
 
+# The hvac_mode applied when the auto-start/stop feature detects a stop condition
+AUTO_START_STOP_STOP_MODE_OFF = str(VThermHvacMode_OFF)
+AUTO_START_STOP_STOP_MODE_FAN_ONLY = str(VThermHvacMode_FAN_ONLY)
+AUTO_START_STOP_STOP_MODE_DRY = str(VThermHvacMode_DRY)
+AUTO_START_STOP_STOP_MODES = [
+    AUTO_START_STOP_STOP_MODE_OFF,
+    AUTO_START_STOP_STOP_MODE_FAN_ONLY,
+    AUTO_START_STOP_STOP_MODE_DRY,
+]
+
+# ─── Auto-start/stop delegation to an external plugin ────────────────────────
+# Stable name under which an external plugin registers its feature manager. The
+# thermostat's ``auto_start_stop_manager`` access point resolves this name first
+# so that the arbitration (state_manager.py) follows the actual decision owner.
+CONF_AUTO_START_STOP_STABLE_NAME = "auto_start_stop"
+
+# Config-entry data key stamped on a thermostat entry once its auto-start/stop
+# feature has been handed over to the external plugin. The value identifies the
+# plugin that performed the migration.
+CONF_AUTO_START_STOP_MIGRATED_BY = "auto_start_stop_migrated_by"
+CONF_AUTO_START_STOP_ENTITY_IDS = "auto_start_stop_entity_ids"
+# The plugin identifier written into the marker above.
+AUTO_START_STOP_MIGRATED_BY_VTHERM_AUTO_START_STOP = "vtherm_auto_start_stop"
+
 HVAC_OFF_REASON_NAME = "hvac_off_reason"
+HVAC_MODE_REASON_NAME = "hvac_mode_reason"
 HVAC_OFF_REASON_MANUAL = "hvac_off_manual"
 HVAC_OFF_REASON_AUTO_START_STOP = "hvac_off_auto_start_stop"
 HVAC_OFF_REASON_WINDOW_DETECTION = "hvac_off_window_detection"
 HVAC_OFF_REASON_SLEEP_MODE = "hvac_off_sleep_mode"
 HVAC_OFF_REASON_SAFETY = "hvac_off_safety_detection"
 HVAC_OFF_REASON_CENTRAL_MODE = "hvac_off_central_mode"
+# Issue #2087 - the control is withdrawn by an inhibition plugin
+HVAC_OFF_REASON_INHIBITION = "hvac_off_inhibition"
 HVAC_OFF_REASONS = Literal[  # pylint: disable=invalid-name
-    HVAC_OFF_REASON_MANUAL, HVAC_OFF_REASON_AUTO_START_STOP, HVAC_OFF_REASON_WINDOW_DETECTION, HVAC_OFF_REASON_SLEEP_MODE, HVAC_OFF_REASON_SAFETY
+    HVAC_OFF_REASON_MANUAL, HVAC_OFF_REASON_AUTO_START_STOP, HVAC_OFF_REASON_WINDOW_DETECTION, HVAC_OFF_REASON_SLEEP_MODE, HVAC_OFF_REASON_SAFETY, HVAC_OFF_REASON_INHIBITION
 ]
+
+# The hvac_mode_reason set when the auto-start/stop feature applies a non-off stop mode
+HVAC_MODE_REASON_AUTO_START_STOP_FAN_ONLY = "hvac_fan_only_auto_start_stop"
+HVAC_MODE_REASON_AUTO_START_STOP_DRY = "hvac_dry_auto_start_stop"
+# Internal cause for commands issued while following an underlying setpoint.
+COMMAND_CAUSE_UNDERLYING_TRACKING = "underlying_tracking"
+# Maps the stop mode applied by the auto-start/stop feature to the related hvac_mode_reason
+AUTO_START_STOP_HVAC_MODE_REASONS = {
+    AUTO_START_STOP_STOP_MODE_FAN_ONLY: HVAC_MODE_REASON_AUTO_START_STOP_FAN_ONLY,
+    AUTO_START_STOP_STOP_MODE_DRY: HVAC_MODE_REASON_AUTO_START_STOP_DRY,
+}
 
 DEFAULT_SHORT_EMA_PARAMS = {
     "max_alpha": 0.5,
@@ -310,6 +396,7 @@ ALL_CONF = (
         CONF_MOTION_PRESET,
         CONF_NO_MOTION_PRESET,
         CONF_DEVICE_POWER,
+        CONF_POWER_UNIT,
         CONF_CYCLE_MIN,
         CONF_PROP_FUNCTION,
         CONF_TPI_COEF_INT,
@@ -354,20 +441,34 @@ ALL_CONF = (
         CONF_CENTRAL_BOILER_ACTIVATION_SRV,
         CONF_CENTRAL_BOILER_DEACTIVATION_SRV,
         CONF_CENTRAL_BOILER_ACTIVATION_DELAY_SEC,
+        CONF_KEEP_ALIVE_BOILER_DELAY_SEC,
         CONF_WINDOW_ACTION,
         CONF_STEP_TEMPERATURE,
         CONF_MIN_OPENING_DEGREES,
+        CONF_MAX_OPENING_DEGREES,
         CONF_MAX_CLOSING_DEGREE,
         CONF_OPENING_THRESHOLD_DEGREE,
         CONF_AUTO_TPI_CALCULATION_METHOD,
         CONF_AUTO_TPI_EMA_ALPHA,
         CONF_AUTO_TPI_AVG_INITIAL_WEIGHT,
-        CONF_AUTO_TPI_MAX_COEF_INT,
         CONF_AUTO_TPI_HEATING_POWER,
         CONF_AUTO_TPI_COOLING_POWER,
         CONF_AUTO_TPI_EMA_DECAY_RATE,
-        CONF_AUTO_TPI_KEEP_EXT_LEARNING,
-        CONF_AUTO_TPI_CONTINUOUS_LEARNING,
+        CONF_AUTO_TPI_CONTINUOUS_KEXT,
+        CONF_AUTO_TPI_CONTINUOUS_KEXT_ALPHA,
+        CONF_AUTO_TPI_LEARNING_TYPE,
+        CONF_AUTO_TPI_ENABLE_ADVANCED_SETTINGS,
+        CONF_SYNC_DEVICE_INTERNAL_TEMP,
+        CONF_SYNC_WITH_CALIBRATION,
+        CONF_USE_HEATING_FAILURE_DETECTION_FEATURE,
+        CONF_USE_HEATING_FAILURE_DETECTION_CENTRAL_CONFIG,
+        CONF_HEATING_FAILURE_THRESHOLD,
+        CONF_COOLING_FAILURE_THRESHOLD,
+        CONF_HEATING_FAILURE_DETECTION_DELAY,
+        CONF_TEMPERATURE_CHANGE_TOLERANCE,
+        CONF_FAILURE_DETECTION_ENABLE_TEMPLATE,
+        CONF_REPAIR_INCORRECT_STATE,
+        CONF_MANUAL_OVERRIDE_DURATION_MIN,
     ]
     + CONF_PRESETS_VALUES
     + CONF_PRESETS_AWAY_VALUES
@@ -416,11 +517,7 @@ CONF_WINDOW_ACTIONS = [
     CONF_WINDOW_ECO_TEMP,
 ]
 
-SUPPORT_FLAGS = (
-    ClimateEntityFeature.TARGET_TEMPERATURE
-    | ClimateEntityFeature.TURN_OFF
-    | ClimateEntityFeature.TURN_ON
-)
+SUPPORT_FLAGS = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
 
 SERVICE_SET_PRESENCE = "set_presence"
 SERVICE_SET_SAFETY = "set_safety"
@@ -433,15 +530,36 @@ SERVICE_UNLOCK = "unlock"
 SERVICE_SET_TPI_PARAMETERS = "set_tpi_parameters"
 SERVICE_SET_AUTO_TPI_MODE = "set_auto_tpi_mode"
 SERVICE_AUTO_TPI_CALIBRATE_CAPACITY = "auto_tpi_calibrate_capacity"
+AUTO_TPI_EVENT = "versatile_thermostat_auto_tpi_event"
+SERVICE_SET_TIMED_PRESET = "set_timed_preset"
+SERVICE_CANCEL_TIMED_PRESET = "cancel_timed_preset"
+SERVICE_RECALIBRATE_VALVES = "recalibrate_valves"
+SERVICE_DOWNLOAD_LOGS = "download_logs"
 
 DEFAULT_SAFETY_MIN_ON_PERCENT = 0.5
 DEFAULT_SAFETY_DEFAULT_ON_PERCENT = 0.1
 
+# Repair incorrect state defaults
+DEFAULT_REPAIR_INCORRECT_STATE = False
+REPAIR_MAX_ATTEMPTS = 5
+REPAIR_MIN_DELAY_AFTER_INIT_SEC = 30
+REPAIR_COMMAND_GRACE_SEC = 10
+
+# Central boiler keep-alive defaults
+DEFAULT_KEEP_ALIVE_BOILER_DELAY_SEC = 0
+
+# Heating failure detection defaults
+DEFAULT_HEATING_FAILURE_THRESHOLD = 0.9  # 90%
+DEFAULT_COOLING_FAILURE_THRESHOLD = 0.0  # 0%
+DEFAULT_HEATING_FAILURE_DETECTION_DELAY = 15  # 15 minutes
+DEFAULT_TEMPERATURE_CHANGE_TOLERANCE = 0.5  # 0.5°C
+
 ATTR_TOTAL_ENERGY = "total_energy"
+ATTR_TOTAL_ENERGY_UNIT = "total_energy_unit"
 ATTR_MEAN_POWER_CYCLE = "mean_cycle_power"
 
 AUTO_FAN_DTEMP_THRESHOLD = 2
-AUTO_FAN_DEACTIVATED_MODES = ["mute", "auto", "low", "quiet", "1"]
+AUTO_FAN_DEACTIVATED_MODES = ["mute", "quiet", "low", "quiet", "1", "one", "speed_1", "auto"]
 
 CENTRAL_CONFIG_NAME = "Central configuration"
 
@@ -470,27 +588,21 @@ MSG_TARGET_TEMP_CENTRAL_MODE = "target_temp_central_mode"
 MSG_TARGET_TEMP_ACTIVITY_DETECTED = "target_temp_activity_detected"
 MSG_TARGET_TEMP_ACTIVITY_NOT_DETECTED = "target_temp_activity_not_detected"
 MSG_TARGET_TEMP_ABSENCE_DETECTED = "target_temp_absence_detected"
+MSG_TARGET_TEMP_TIMED_PRESET = "target_temp_timed_preset"
+MSG_NOT_INITIALIZED = "not_initialized"
+MSG_UNDERLYING_UNAVAILABLE = "underlying_unavailable"
+
 
 #  A special regulation parameter suggested by @Maia here: https://github.com/jmcollin78/versatile_thermostat/discussions/154
 class RegulationParamSlow:
     """Light parameters for slow latency regulation"""
 
-    kp: float = (
-        0.2  # 20% of the current internal regulation offset are caused by the current difference of target temperature and room temperature
-    )
-    ki: float = (
-        0.8 / 288.0
-    )  # 80% of the current internal regulation offset are caused by the average offset of the past 24 hours
-    k_ext: float = (
-        1.0 / 25.0
-    )  # this will add 1°C to the offset when it's 25°C colder outdoor than indoor
+    kp: float = 0.2  # 20% of the current internal regulation offset are caused by the current difference of target temperature and room temperature
+    ki: float = 0.8 / 288.0  # 80% of the current internal regulation offset are caused by the average offset of the past 24 hours
+    k_ext: float = 1.0 / 25.0  # this will add 1°C to the offset when it's 25°C colder outdoor than indoor
     offset_max: float = 2.0  # limit to a final offset of -2°C to +2°C
-    stabilization_threshold: float = (
-        0.0  # this needs to be disabled as otherwise the long term accumulated error will always be reset when the temp briefly crosses from/to below/above the target
-    )
-    accumulated_error_threshold: float = (
-        2.0 * 288
-    )  # this allows up to 2°C long term offset in both directions
+    accumulated_error_threshold: float = 2.0 * 288  # this allows up to 2°C long term offset in both directions
+    overheat_protection: bool = True
 
 
 class RegulationParamLight:
@@ -500,8 +612,8 @@ class RegulationParamLight:
     ki: float = 0.05
     k_ext: float = 0.05
     offset_max: float = 1.5
-    stabilization_threshold: float = 0.1
     accumulated_error_threshold: float = 10
+    overheat_protection: bool = True
 
 
 class RegulationParamMedium:
@@ -511,8 +623,8 @@ class RegulationParamMedium:
     ki: float = 0.05
     k_ext: float = 0.1
     offset_max: float = 2
-    stabilization_threshold: float = 0.1
     accumulated_error_threshold: float = 20
+    overheat_protection: bool = True
 
 
 class RegulationParamStrong:
@@ -526,8 +638,8 @@ class RegulationParamStrong:
     ki: float = 0.08
     k_ext: float = 0.0
     offset_max: float = 5
-    stabilization_threshold: float = 0.1
     accumulated_error_threshold: float = 50
+    overheat_protection: bool = True
 
 
 # Not used now
@@ -538,22 +650,8 @@ class RegulationParamVeryStrong:
     ki: float = 0.1
     k_ext: float = 0.2
     offset_max: float = 8
-    stabilization_threshold: float = 0.1
     accumulated_error_threshold: float = 80
-
-
-class EventType(Enum):
-    """The event type that can be sent"""
-
-    SAFETY_EVENT = "versatile_thermostat_safety_event"
-    POWER_EVENT = "versatile_thermostat_power_event"
-    TEMPERATURE_EVENT = "versatile_thermostat_temperature_event"
-    HVAC_MODE_EVENT = "versatile_thermostat_hvac_mode_event"
-    CENTRAL_BOILER_EVENT = "versatile_thermostat_central_boiler_event"
-    PRESET_EVENT = "versatile_thermostat_preset_event"
-    WINDOW_AUTO_EVENT = "versatile_thermostat_window_auto_event"
-    AUTO_START_STOP_EVENT = "versatile_thermostat_auto_start_stop_event"
-    AUTO_TPI_EVENT = "versatile_thermostat_auto_tpi_event"
+    overheat_protection: bool = True
 
 
 def send_vtherm_event(hass, event_type: EventType, entity, data: dict):
@@ -568,35 +666,67 @@ def send_vtherm_event(hass, event_type: EventType, entity, data: dict):
 def get_safe_float(hass, entity_id: str):
     """Get a safe float state value for an entity.
     Return None if entity is not available"""
-    if (
-        entity_id is None
-        or not (state := hass.states.get(entity_id))
-        or state.state is None
-        or state.state == "None"
-        or state.state == "unknown"
-        or state.state == "unavailable"
-    ):
+    if entity_id is None or not (state := hass.states.get(entity_id)) or state.state in [None, "None", STATE_UNAVAILABLE, STATE_UNKNOWN]:
         return None
-    float_val = float(state.state)
-    return None if math.isinf(float_val) or not math.isfinite(float_val) else float_val
+    return get_safe_float_value(state.state)
 
 
-def get_tz(hass: HomeAssistant):
-    """Get the current timezone"""
+def get_safe_float_value(value):
+    """Get a safe float value.
+    Return None if value is not a valid float"""
+    try:
+        float_val = float(value)
+        return None if math.isinf(float_val) or not math.isfinite(float_val) else float_val
+    except (ValueError, TypeError):
+        return None
 
-    return dt_util.get_time_zone(hass.config.time_zone)
+
+def power_to_watts(value: float | None, unit: str | None) -> float | None:
+    """Normalize a power (or energy) magnitude to Watts (or Watt-hours).
+    The conversion accepts internal selector keys and Home Assistant units."""
+
+    if value is None:
+        return None
+    if to_internal_power_unit(unit) == POWER_UNIT_KILO_WATT:
+        return value * 1000.0
+    return value
 
 
-class NowClass:
-    """For testing purpose only"""
+def power_from_watts(value_w: float | None, unit: str | None) -> float | None:
+    """Convert a Watts (or Watt-hours) magnitude to the target power unit.
 
-    @staticmethod
-    def get_now(hass: HomeAssistant) -> datetime:
-        """A test function to get the now.
-        For testing purpose this method can be overriden to get a specific
-        timestamp.
-        """
-        return datetime.now(get_tz(hass))
+    The conversion accepts internal selector keys and Home Assistant units.
+    """
+
+    if value_w is None:
+        return None
+    if to_internal_power_unit(unit) == POWER_UNIT_KILO_WATT:
+        return value_w / 1000.0
+    return value_w
+
+
+def to_internal_power_unit(power_unit: str | None) -> str | None:
+    """Map a selector key or Home Assistant power unit to its internal key."""
+    power_unit_mapping = {
+        POWER_UNIT_WATT: POWER_UNIT_WATT,
+        UnitOfPower.WATT: POWER_UNIT_WATT,
+        POWER_UNIT_KILO_WATT: POWER_UNIT_KILO_WATT,
+        UnitOfPower.KILO_WATT: POWER_UNIT_KILO_WATT,
+        POWER_UNIT_MEGA_WATT: POWER_UNIT_MEGA_WATT,
+        UnitOfPower.MEGA_WATT: POWER_UNIT_MEGA_WATT,
+    }
+    return power_unit_mapping.get(power_unit, power_unit)
+
+
+def to_legal_power_unit(power_unit: str) -> str:
+    """Map the power unit from the thermostat to Home Assistant's expected unit."""
+    power_unit_mapping: dict[str, str] = {
+        POWER_UNIT_WATT: UnitOfPower.WATT,
+        POWER_UNIT_KILO_WATT: UnitOfPower.KILO_WATT,
+        POWER_UNIT_MEGA_WATT: UnitOfPower.MEGA_WATT,
+    }
+    internal_power_unit = to_internal_power_unit(power_unit) or power_unit
+    return power_unit_mapping.get(internal_power_unit, power_unit)
 
 
 class UnknownEntity(HomeAssistantError):
@@ -624,8 +754,26 @@ class ValveRegulationNbEntitiesIncorrect(HomeAssistantError):
     The number of specific entities is incorrect."""
 
 
+class ValveRegulationCardinalityIncorrect(HomeAssistantError):
+    """Error to indicate that the min/max opening degrees lists cannot contain
+    more values than the number of underlying valves."""
+
+
+class SyncDeviceInternalTempNbEntitiesIncorrect(HomeAssistantError):
+    """Error to indicate there is an error in the configuration of the TRV with synchronize device internal temperature.
+    The number of specific entities is incorrect."""
+
+
 class ValveRegulationMinOpeningDegreesIncorrect(HomeAssistantError):
     """Error to indicate that the minimal opening degrees is not a list of int separated by coma"""
+
+
+class ValveRegulationMaxOpeningDegreesIncorrect(HomeAssistantError):
+    """Error to indicate that the maximal opening degrees is not a list of int separated by coma"""
+
+
+class ValveRegulationMinMaxOpeningDegreesIncorrect(HomeAssistantError):
+    """Error to indicate that max_opening_degrees must be greater than min_opening_degrees for each underlying"""
 
 
 class VirtualSwitchConfigurationIncorrect(HomeAssistantError):
