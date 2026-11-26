@@ -157,6 +157,11 @@ class ThermostatOverClimate(BaseThermostat[UnderlyingClimate]):
 
         one_idle = False
         for under in under_list:
+            if (
+                self.vtherm_hvac_mode == VThermHvacMode_OFF
+                and self.window_manager.is_window_detected
+            ):
+                under._hass.async_create_task(under.check_and_repair())
             if (action := under.hvac_action) not in [
                 HVACAction.IDLE,
                 HVACAction.OFF,

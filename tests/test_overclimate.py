@@ -144,6 +144,55 @@ async def test_over_climate_direct_repair_does_not_wait_for_previous_command(
     entity.remove_thermostat()
 
 
+@pytest.mark.parametrize("window_detected", [False, True])
+@pytest.mark.parametrize("thermostat_mode", [VThermHvacMode_OFF, VThermHvacMode_HEAT])
+async def test_calculate_hvac_action_schedules_window_shutdown_repair(
+    hass: HomeAssistant,
+    skip_hass_states_is_state,
+    skip_turn_on_off_heater,
+    skip_send_event,
+    window_detected,
+    thermostat_mode,
+):
+    """Retry a climate shutdown only while a window condition forces VTherm off."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="TheOverClimateMockName",
+        unique_id="uniqueId",
+        data=PARTIAL_CLIMATE_NOT_REGULATED_CONFIG,
+    )
+    await create_and_register_mock_climate(
+        hass,
+        "mock_climate",
+        "MockClimateName",
+        {},
+        hvac_mode=VThermHvacMode_OFF,
+        hvac_action=HVACAction.OFF,
+    )
+    entity = await create_thermostat(hass, entry, "climate.theoverclimatemockname")
+    underlying = entity.underlying_entity(0)
+    entity.current_state.set_hvac_mode(thermostat_mode)
+
+    with (
+        patch.object(underlying, "check_and_repair", new_callable=AsyncMock) as mock_check_and_repair,
+        patch.object(
+            type(entity.window_manager),
+            "is_window_detected",
+            new_callable=PropertyMock,
+            return_value=window_detected,
+        ),
+    ):
+        entity.calculate_hvac_action()
+        entity.calculate_hvac_action()
+        await hass.async_block_till_done()
+
+    expected_repair_count = int(
+        window_detected and thermostat_mode == VThermHvacMode_OFF
+    ) * 2
+    assert mock_check_and_repair.await_count == expected_repair_count
+    entity.remove_thermostat()
+
+
 @pytest.mark.parametrize("cached_mode", [VThermHvacMode_HEAT, VThermHvacMode_COOL])
 @pytest.mark.parametrize("under_mode", [VThermHvacMode_OFF, VThermHvacMode_HEAT, VThermHvacMode_COOL])
 @pytest.mark.parametrize("command_age_sec", [0, 2])
