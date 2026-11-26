@@ -16,6 +16,7 @@ from custom_components.versatile_thermostat.thermostat_climate import (
     ThermostatOverClimate,
 )
 from custom_components.versatile_thermostat.underlyings import UnderlyingClimate
+from custom_components.versatile_thermostat.const import REPAIR_COMMAND_GRACE_SEC
 from custom_components.versatile_thermostat.feature_repair_incorrect_state_manager import FeatureRepairIncorrectStateManager
 
 from custom_components.versatile_thermostat.switch import (
@@ -154,7 +155,7 @@ async def test_calculate_hvac_action_schedules_window_shutdown_repair(
     window_detected,
     thermostat_mode,
 ):
-    """Retry a climate shutdown only while a window condition forces VTherm off."""
+    """Retry a missed window shutdown no more often than the repair grace period."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="TheOverClimateMockName",
@@ -172,6 +173,11 @@ async def test_calculate_hvac_action_schedules_window_shutdown_repair(
     entity = await create_thermostat(hass, entry, "climate.theoverclimatemockname")
     underlying = entity.underlying_entity(0)
     entity.current_state.set_hvac_mode(thermostat_mode)
+    now = datetime.now(tz=get_tz(hass))
+    entity._set_now(now)
+    underlying._last_command_sent_datetime = now - timedelta(
+        seconds=REPAIR_COMMAND_GRACE_SEC + 1
+    )
 
     with (
         patch.object(underlying, "check_and_repair", new_callable=AsyncMock) as mock_check_and_repair,
@@ -186,10 +192,16 @@ async def test_calculate_hvac_action_schedules_window_shutdown_repair(
         entity.calculate_hvac_action()
         await hass.async_block_till_done()
 
-    expected_repair_count = int(
-        window_detected and thermostat_mode == VThermHvacMode_OFF
-    ) * 2
-    assert mock_check_and_repair.await_count == expected_repair_count
+        expected_repair_count = int(
+            window_detected and thermostat_mode == VThermHvacMode_OFF
+        )
+        assert mock_check_and_repair.await_count == expected_repair_count
+
+        if expected_repair_count:
+            entity._set_now(now + timedelta(seconds=REPAIR_COMMAND_GRACE_SEC))
+            entity.calculate_hvac_action()
+            await hass.async_block_till_done()
+            assert mock_check_and_repair.await_count == 2
     entity.remove_thermostat()
 
 

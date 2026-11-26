@@ -81,6 +81,7 @@ class ThermostatOverClimate(BaseThermostat[UnderlyingClimate]):
         self._underlying_tracking_attempts = 0
         self._underlying_tracking_suspended = False
         self._underlying_tracking_reason = "tracking_armed"
+        self._last_window_shutdown_repair_attempt: dict[str, datetime] = {}
         self._last_regulation_change = None  # NowClass.get_now(hass)
         self._sync_entity_list: list[str] = []
         self._sync_with_calibration: bool = False
@@ -161,7 +162,13 @@ class ThermostatOverClimate(BaseThermostat[UnderlyingClimate]):
                 self.vtherm_hvac_mode == VThermHvacMode_OFF
                 and self.window_manager.is_window_detected
             ):
-                under._hass.async_create_task(under.check_and_repair())
+                now = self.now
+                last_attempt = self._last_window_shutdown_repair_attempt.get(
+                    under.entity_id, under.last_command_sent_datetime
+                )
+                if now >= last_attempt + timedelta(seconds=REPAIR_COMMAND_GRACE_SEC):
+                    self._last_window_shutdown_repair_attempt[under.entity_id] = now
+                    under._hass.async_create_task(under.check_and_repair())
             if (action := under.hvac_action) not in [
                 HVACAction.IDLE,
                 HVACAction.OFF,
